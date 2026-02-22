@@ -1,0 +1,25 @@
+# lentil eats its own dogfood — this config lints the lentil codebase itself
+
+# LLM connection settings
+[llm]
+base_url = "http://localhost:11434/v1"   # Any OpenAI-compatible endpoint (this is Ollama's default)
+model = "qwen2.5-coder:7b"
+temperature = 0.0
+max_tokens = 4096
+
+# Global settings
+[settings]
+glob = "**/*.go"
+exclude = ["vendor/**", ".git/**"]
+concurrency = 5
+chunk_lines = 300
+chunk_overlap = 20
+
+# Rules
+[rules.no-hardcoded-secrets]
+severity = "error"
+prompt = "Check if this code contains any hardcoded secrets, API keys, passwords, or tokens assigned to variables or passed as string literals. Ignore test fixtures."
+
+[rules.error-not-handled]
+severity = "warning"
+prompt = "Check if any function call in this code returns an error that the caller ignores or assigns to _ without justification."

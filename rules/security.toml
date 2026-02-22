@@ -1,0 +1,11 @@
+# Security-focused lint rules
+
+[rules.sql-injection]
+severity = "error"
+prompt = "Check if this code uses string concatenation or f-string formatting to build SQL queries instead of parameterized queries. Report each occurrence."
+glob = "**/*.{py,js,ts}"
+
+[rules.unsafe-deserialization]
+severity = "error"
+prompt = "Check if this code uses pickle.loads, yaml.load (without SafeLoader), or eval() on untrusted input. Report each occurrence."
+glob = "**/*.py"

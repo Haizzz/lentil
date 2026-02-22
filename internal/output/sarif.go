@@ -1,0 +1,59 @@
+package output
+
+import (
+	"io"
+
+	"github.com/owenrumney/go-sarif/v3/pkg/report"
+	"github.com/owenrumney/go-sarif/v3/pkg/report/v210/sarif"
+
+	"github.com/anhle/lentil/internal/types"
+)
+
+// SARIF writes findings in SARIF v2.1.0 format.
+func SARIF(w io.Writer, findings []types.Finding, rules []types.Rule) error {
+	r := report.NewV210Report()
+
+	run := sarif.NewRunWithInformationURI("lentil", "https://github.com/anhle/lentil")
+
+	// Add rules as reporting descriptors
+	for _, rule := range rules {
+		run.AddRule(rule.ID).WithDescription(rule.Prompt)
+	}
+
+	// Add results
+	for _, f := range findings {
+		level := mapSeverity(f.Severity)
+		result := run.CreateResultForRule(f.Rule).
+			WithLevel(level).
+			WithMessage(sarif.NewTextMessage(f.Message))
+
+		loc := sarif.NewPhysicalLocation().
+			WithArtifactLocation(sarif.NewSimpleArtifactLocation(f.File)).
+			WithRegion(sarif.NewSimpleRegion(f.Line, f.Line))
+
+		if f.Column > 0 {
+			loc.Region.StartColumn = &f.Column
+		}
+
+		result.AddLocation(
+			sarif.NewLocationWithPhysicalLocation(loc),
+		)
+	}
+
+	r.AddRun(run)
+
+	return r.Write(w)
+}
+
+func mapSeverity(s types.Severity) string {
+	switch s {
+	case types.SeverityError:
+		return "error"
+	case types.SeverityWarning:
+		return "warning"
+	case types.SeverityInfo:
+		return "note"
+	default:
+		return "none"
+	}
+}
