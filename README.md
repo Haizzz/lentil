@@ -24,6 +24,10 @@ The tradeoff is speed and cost: lentil is slower than traditional linters and re
 
 ## Install
 
+Download a prebuilt binary from the [latest release](https://github.com/Haizzz/lentil/releases/latest), extract it, and add it to your `PATH`.
+
+Or install with Go:
+
 ```bash
 go install github.com/Haizzz/lentil/cmd/lentil@latest
 ```
@@ -241,6 +245,8 @@ go test ./...
 3. Add tests in `internal/output/output_test.go`
 
 ### Cross-Compilation
+
+Tagged releases are automatically cross-compiled via [GoReleaser](https://goreleaser.com/) (see `.goreleaser.yml`). For manual cross-compilation:
 
 ```bash
 GOOS=linux GOARCH=amd64 go build -o lentil-linux ./cmd/lentil

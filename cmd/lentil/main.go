@@ -22,6 +22,8 @@ import (
 	"github.com/anhle/lentil/internal/output"
 )
 
+var version = "dev"
+
 var (
 	flagConfig   string
 	flagFormat   string
@@ -34,6 +36,7 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:           "lentil",
+		Version:       version,
 		Short:         "LLM-powered linter with natural language rules",
 		Long:          "lentil uses LLM models to lint source code against rules defined as natural language prompts.",
 		SilenceUsage:  true,
