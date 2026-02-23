@@ -141,6 +141,11 @@ func run(cmd *cobra.Command, args []string) error {
 	minRank := lint.SeverityRank(minSeverity)
 
 	apiKey := config.ResolveAPIKey()
+	if apiKey == "" {
+		clearStatus()
+
+		return fmt.Errorf("no API key found: set LENTIL_LLM_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+	}
 	client := llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.Model, apiKey, cfg.LLM.Temperature, cfg.LLM.MaxTokens)
 
 	var targets []string
@@ -169,11 +174,11 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for _, w := range warnings {
-		status(fmt.Sprintf("warning: %v", w))
-	}
-
 	clearStatus()
+
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", w)
+	}
 
 	var filtered []lint.Finding
 	for _, f := range findings {
