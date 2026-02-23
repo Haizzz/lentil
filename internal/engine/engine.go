@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/anhle/lentil/internal/files"
 	"github.com/anhle/lentil/internal/lint"
@@ -20,8 +19,6 @@ type ProgressFunc func(file string, rule string, done int, total int)
 // StatusFunc is called to report status messages during processing.
 type StatusFunc func(msg string)
 
-
-// AIzaSyA-ExampleKey12345
 
 // Engine orchestrates the linting process.
 type Engine struct {
@@ -37,6 +34,13 @@ type Engine struct {
 type workItem struct {
 	Rule  lint.Rule
 	Chunk lint.Chunk
+}
+
+type result struct {
+	Findings []lint.Finding
+	Err      error
+	File     string
+	RuleID   string
 }
 
 // NewEngine creates a new Engine. If targets is non-empty, only files under
@@ -68,55 +72,53 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 		return nil, len(filesSet), nil
 	}
 
-	if e.onStatus != nil {
-		e.onStatus("Sending chunks to LLM...")
-	}
-
-	sem := make(chan struct{}, e.settings.Concurrency)
-	var mu sync.Mutex
-	var allFindings []lint.Finding
-	var errs []error
-	done := 0
+	work := make(chan workItem)
+	results := make(chan result)
 	total := len(workItems)
 
-	var wg sync.WaitGroup
-	for _, wi := range workItems {
-		wg.Add(1)
-		go func(item workItem) {
-			defer wg.Done()
-
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			done++
-			if err != nil {
-				errs = append(errs, fmt.Errorf("rule %s on %s: %w", item.Rule.ID, item.Chunk.FilePath, err))
-			} else {
-				for _, f := range findings {
-					allFindings = append(allFindings, lint.Finding{
-						File:     item.Chunk.FilePath,
-						Line:     f.Line,
-						Column:   f.Column,
-						Rule:     item.Rule.ID,
-						Severity: item.Rule.Severity,
-						Message:  f.Message,
-						Snippet:  f.Snippet,
-					})
+	for range e.settings.Concurrency {
+		go func() {
+			for item := range work {
+				findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
+				var mapped []lint.Finding
+				if err == nil {
+					for _, f := range findings {
+						mapped = append(mapped, lint.Finding{
+							File:     item.Chunk.FilePath,
+							Line:     f.Line,
+							Column:   f.Column,
+							Rule:     item.Rule.ID,
+							Severity: item.Rule.Severity,
+							Message:  f.Message,
+							Snippet:  f.Snippet,
+						})
+					}
 				}
+				results <- result{Findings: mapped, Err: err, File: item.Chunk.FilePath, RuleID: item.Rule.ID}
 			}
-
-			if e.onProgress != nil {
-				e.onProgress(item.Chunk.FilePath, item.Rule.ID, done, total)
-			}
-		}(wi)
+		}()
 	}
 
-	wg.Wait()
+	go func() {
+		for _, wi := range workItems {
+			work <- wi
+		}
+		close(work)
+	}()
+
+	var allFindings []lint.Finding
+	var errs []error
+	for done := range total {
+		r := <-results
+		if r.Err != nil {
+			errs = append(errs, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
+		} else {
+			allFindings = append(allFindings, r.Findings...)
+		}
+		if e.onProgress != nil {
+			e.onProgress(r.File, r.RuleID, done+1, total)
+		}
+	}
 
 	if len(errs) > 0 {
 		for _, err := range errs {

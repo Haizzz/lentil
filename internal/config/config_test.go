@@ -73,13 +73,13 @@ prompt = "Find issues"
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.LLM.BaseURL != "http://localhost:11434/v1" {
+	if cfg.LLM.BaseURL != "https://api.openai.com/v1" {
 		t.Errorf("default base_url = %q", cfg.LLM.BaseURL)
 	}
 	if cfg.LLM.MaxTokens != 4096 {
 		t.Errorf("default max_tokens = %d", cfg.LLM.MaxTokens)
 	}
-	if cfg.Settings.Concurrency != 5 {
+	if cfg.Settings.Concurrency != 4 {
 		t.Errorf("default concurrency = %d", cfg.Settings.Concurrency)
 	}
 	if cfg.Settings.ChunkLines != 300 {

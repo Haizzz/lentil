@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/anhle/lentil/internal/config"
@@ -67,19 +68,10 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	var statusLines int
+	quiet := flagQuiet
 	status := func(msg string) {
-		if !flagQuiet {
+		if !quiet {
 			fmt.Fprintf(os.Stderr, "• %s\n", msg)
-			statusLines++
-		}
-	}
-	clearStatus := func() {
-		if !flagQuiet {
-			for range statusLines {
-				fmt.Fprintf(os.Stderr, "\033[A\033[2K")
-			}
-			statusLines = 0
 		}
 	}
 
@@ -117,21 +109,6 @@ func run(cmd *cobra.Command, args []string) error {
 	apiKey := config.ResolveAPIKey()
 	client := llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.Model, apiKey, cfg.LLM.Temperature, cfg.LLM.MaxTokens)
 
-	statusCleared := false
-	var progress engine.ProgressFunc
-	if !flagQuiet {
-		progress = func(file, rule string, done, total int) {
-			if !statusCleared {
-				clearStatus()
-				statusCleared = true
-			}
-			fmt.Fprintf(os.Stderr, "\r  [%d/%d] %s — %s", done, total, file, rule)
-			if done == total {
-				fmt.Fprintln(os.Stderr)
-			}
-		}
-	}
-
 	var targets []string
 	for _, arg := range args {
 		abs, err := filepath.Abs(arg)
@@ -141,12 +118,36 @@ func run(cmd *cobra.Command, args []string) error {
 		targets = append(targets, abs)
 	}
 
+	var bar *progressbar.ProgressBar
+	var progress engine.ProgressFunc
+	if !quiet {
+		progress = func(file, rule string, done, total int) {
+			if bar == nil {
+				bar = progressbar.NewOptions(total,
+					progressbar.OptionSetWriter(os.Stderr),
+					progressbar.OptionShowCount(),
+				)
+			}
+			bar.Describe(fmt.Sprintf("%s — %s", filepath.Base(file), rule))
+			_ = bar.Set(done)
+		}
+	}
+
 	eng := engine.NewEngine(client, rules, cfg.Settings, walker, targets, progress, status)
 	findings, filesScanned, err := eng.Run(ctx)
 	if err != nil {
 		return err
 	}
-	status(fmt.Sprintf("Analyzed %d files, found %d findings", filesScanned, len(findings)))
+
+	if bar != nil {
+		_ = bar.Finish()
+		_ = bar.Clear()
+		fmt.Fprintln(os.Stderr)
+	}
+
+	if !quiet {
+		fmt.Fprintf(os.Stderr, "Scanned %d files, found %d findings\n", filesScanned, len(findings))
+	}
 
 	var filtered []lint.Finding
 	for _, f := range findings {
