@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="lentil.png" alt="lentil" width="200">
+</p>
+
 # lentil
 
 LLM-powered linter that takes lint rules as natural language prompts. It sends code to any OpenAI-compatible endpoint and returns structured findings with file, line number, severity, and message. Ships as a single binary with no runtime dependencies.
