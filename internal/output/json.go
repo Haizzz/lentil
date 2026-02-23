@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 type jsonOutput struct {

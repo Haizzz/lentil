@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 var testFindings = []lint.Finding{

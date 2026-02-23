@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 func TestAnalyze_Success(t *testing.T) {

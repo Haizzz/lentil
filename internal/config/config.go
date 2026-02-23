@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 // Load reads and parses a single lentil config file, applying defaults and validation.

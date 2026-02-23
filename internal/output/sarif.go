@@ -6,14 +6,14 @@ import (
 	"github.com/owenrumney/go-sarif/v3/pkg/report"
 	"github.com/owenrumney/go-sarif/v3/pkg/report/v210/sarif"
 
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 // SARIF writes findings in SARIF v2.1.0 format.
 func SARIF(w io.Writer, findings []lint.Finding, rules []lint.Rule) error {
 	r := report.NewV210Report()
 
-	run := sarif.NewRunWithInformationURI("lentil", "https://github.com/anhle/lentil")
+	run := sarif.NewRunWithInformationURI("lentil", "https://github.com/Haizzz/lentil")
 
 	// Add rules as reporting descriptors
 	for _, rule := range rules {

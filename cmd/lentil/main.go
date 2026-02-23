@@ -15,11 +15,11 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 
-	"github.com/anhle/lentil/internal/config"
-	"github.com/anhle/lentil/internal/engine"
-	"github.com/anhle/lentil/internal/lint"
-	"github.com/anhle/lentil/internal/llm"
-	"github.com/anhle/lentil/internal/output"
+	"github.com/Haizzz/lentil/internal/config"
+	"github.com/Haizzz/lentil/internal/engine"
+	"github.com/Haizzz/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/llm"
+	"github.com/Haizzz/lentil/internal/output"
 )
 
 var version = "dev"

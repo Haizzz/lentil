@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
-	"github.com/anhle/lentil/internal/files"
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/files"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 const configFileName = "lentil.toml"

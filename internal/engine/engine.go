@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/anhle/lentil/internal/files"
-	"github.com/anhle/lentil/internal/lint"
-	"github.com/anhle/lentil/internal/llm"
+	"github.com/Haizzz/lentil/internal/files"
+	"github.com/Haizzz/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/llm"
 )
 
 const binaryCheckLimit = 8192

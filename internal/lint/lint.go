@@ -12,10 +12,10 @@ const (
 )
 
 const (
-	DefaultBaseURL     = "https://api.openai.com/v1"
-	DefaultMaxTokens   = 4096
-	DefaultConcurrency = 8
-	DefaultChunkLines  = 300
+	DefaultBaseURL      = "https://api.openai.com/v1"
+	DefaultMaxTokens    = 4096
+	DefaultConcurrency  = 8
+	DefaultChunkLines   = 300
 	DefaultChunkOverlap = 20
 
 	MaxTemperature = 2.0

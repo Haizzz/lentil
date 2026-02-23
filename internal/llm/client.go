@@ -9,7 +9,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 const (
@@ -89,8 +89,8 @@ func (c *Client) Analyze(ctx context.Context, rule lint.Rule, chunk lint.Chunk) 
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(userPrompt),
 		},
-		Model:       openai.ChatModel(c.model),
-		Temperature: openai.Float(c.temp),
+		Model:               openai.ChatModel(c.model),
+		Temperature:         openai.Float(c.temp),
 		MaxCompletionTokens: openai.Int(int64(c.maxTokens)),
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anhle/lentil/internal/files"
-	"github.com/anhle/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/files"
+	"github.com/Haizzz/lentil/internal/lint"
 )
 
 func TestLoad_BasicConfig(t *testing.T) {
