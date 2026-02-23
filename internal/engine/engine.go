@@ -86,6 +86,10 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 				}
 			}()
 			for item := range work {
+				if ctx.Err() != nil {
+					results <- result{Err: ctx.Err(), File: item.Chunk.FilePath, RuleID: item.Rule.ID}
+					continue
+				}
 				findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
 				var mapped []lint.Finding
 				if err == nil {
@@ -108,7 +112,12 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 
 	go func() {
 		for _, wi := range workItems {
-			work <- wi
+			select {
+			case work <- wi:
+			case <-ctx.Done():
+				close(work)
+				return
+			}
 		}
 		close(work)
 	}()
@@ -116,14 +125,18 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 	var allFindings []lint.Finding
 	var warnings []error
 	for done := range total {
-		r := <-results
-		if r.Err != nil {
-			warnings = append(warnings, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
-		} else {
-			allFindings = append(allFindings, r.Findings...)
-		}
-		if e.onProgress != nil {
-			e.onProgress(r.File, r.RuleID, done+1, total)
+		select {
+		case r := <-results:
+			if r.Err != nil {
+				warnings = append(warnings, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
+			} else {
+				allFindings = append(allFindings, r.Findings...)
+			}
+			if e.onProgress != nil {
+				e.onProgress(r.File, r.RuleID, done+1, total)
+			}
+		case <-ctx.Done():
+			return allFindings, len(filesSet), warnings, ctx.Err()
 		}
 	}
 
