@@ -140,7 +140,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if bar != nil {
-		_ = bar.Finish()
+		_ = bar.Close()
 		_ = bar.Clear()
 		fmt.Fprintln(os.Stderr)
 	}

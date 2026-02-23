@@ -63,17 +63,18 @@ func (w *Walker) Glob(base, pattern string) ([]string, error) {
 		fullPath := filepath.Join(base, m)
 
 		info, err := os.Stat(fullPath)
-		if err != nil || info.IsDir() {
+		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
 
-		if w.ignore != nil {
-			rel, err := filepath.Rel(w.root, fullPath)
-			if err == nil {
-				segments := strings.Split(filepath.ToSlash(rel), "/")
-				if w.ignore.Match(segments, false) {
-					continue
-				}
+		rel, err := filepath.Rel(w.root, fullPath)
+		if err == nil {
+			segments := strings.Split(filepath.ToSlash(rel), "/")
+			if segments[0] == ".git" {
+				continue
+			}
+			if w.ignore != nil && w.ignore.Match(segments, false) {
+				continue
 			}
 		}
 

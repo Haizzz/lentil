@@ -153,6 +153,34 @@ func TestWalker_Glob_SortedByDepth(t *testing.T) {
 	}
 }
 
+func TestWalker_Glob_SkipsDotGit(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "main.go"), "package main")
+	writeFile(t, filepath.Join(dir, ".git", "config"), "[core]")
+	writeFile(t, filepath.Join(dir, ".git", "HEAD"), "ref: refs/heads/main")
+
+	w, err := NewWalker(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := w.Glob(dir, "**/*")
+	if err != nil {
+		t.Fatalf("Glob failed: %v", err)
+	}
+
+	for _, f := range files {
+		rel, _ := filepath.Rel(dir, f)
+		if len(rel) >= 4 && rel[:4] == ".git" {
+			t.Errorf(".git files should be excluded, got %s", rel)
+		}
+	}
+
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
+	}
+}
+
 func TestFindRoot_NonGitDir(t *testing.T) {
 	dir := t.TempDir()
 
