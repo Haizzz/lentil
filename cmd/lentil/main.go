@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/briandowns/spinner"
@@ -22,7 +23,15 @@ import (
 	"github.com/Haizzz/lentil/internal/output"
 )
 
-var version = "dev"
+var version = buildVersion()
+
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+
+	return "dev"
+}
 
 var (
 	flagConfig   string
