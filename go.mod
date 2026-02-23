@@ -1,4 +1,4 @@
-module github.com/anhle/lentil
+module github.com/Haizzz/lentil
 
 go 1.25.6
 
