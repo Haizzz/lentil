@@ -150,20 +150,6 @@ glob = "**/*.{py,js,go}"    # optional file pattern (default: all files)
 
 Severity levels: `error`, `warning`, `info`.
 
-### Rule Packs (Includes)
-
-Split rules into reusable files:
-
-```toml
-# lentil.toml
-include = [
-    "rules/security.toml",
-    "rules/style.toml",
-]
-```
-
-Included files use the same `[rules.*]` format. Inline rules override included rules on ID conflict.
-
 ### API Key
 
 Keys are resolved from environment variables in order:
@@ -246,12 +232,11 @@ go test ./...
 - **Concurrency:** The engine builds a work queue of `(rule, chunk)` pairs and fans out with a bounded semaphore (`settings.concurrency`). The bottleneck is LLM API latency, not CPU, so goroutines are the right fit.
 - **Chunking:** Large files are split into overlapping chunks so findings near chunk boundaries aren't missed. Each chunk preserves absolute line numbers so the LLM reports correct positions. Overlapping findings are deduplicated by `(file, line, rule)`.
 - **LLM response parsing:** The LLM is instructed to return strict JSON. Responses are validated — line numbers outside the chunk range are discarded. Malformed JSON is treated as an error for that chunk (other chunks still produce results).
-- **Config includes:** Rule files can be split into reusable packs. Inline rules override included rules when IDs conflict, so local config always wins over shared packs.
 - **Output:** Progress goes to stderr, results go to stdout. This means `lentil -f json` pipes cleanly. The `--quiet` flag suppresses all stderr output.
 
 ### Adding a New Output Format
 
-1. Create `internal/output/yourformat.go` with a function matching the signature: `func YourFormat(w io.Writer, findings []types.Finding, ...) error`
+1. Create `internal/output/yourformat.go` with a function matching the signature: `func YourFormat(w io.Writer, findings []lint.Finding, ...) error`
 2. Wire it into the `switch format` block in `cmd/lentil/main.go`
 3. Add tests in `internal/output/output_test.go`
 
