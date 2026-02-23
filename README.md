@@ -25,13 +25,13 @@ The tradeoff is speed and cost: lentil is slower than traditional linters and re
 ## Install
 
 ```bash
-go install github.com/anhle/lentil/cmd/lentil@latest
+go install github.com/Haizzz/lentil/cmd/lentil@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/anhle/lentil.git
+git clone https://github.com/Haizzz/lentil.git
 cd lentil
 go build -o lentil ./cmd/lentil
 ```
