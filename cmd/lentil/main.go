@@ -10,8 +10,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
-	"github.com/schollz/progressbar/v3"
+	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"
 
 	"github.com/anhle/lentil/internal/config"
@@ -65,13 +66,29 @@ func main() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	switch flagFormat {
+	case "text", "json", "sarif":
+	default:
+		return fmt.Errorf("unknown output format %q: must be text, json, or sarif", flagFormat)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	quiet := flagQuiet
+	s := spinner.New(spinner.CharSets[14], 80*time.Millisecond, spinner.WithWriter(os.Stderr))
+
 	status := func(msg string) {
 		if !quiet {
-			fmt.Fprintf(os.Stderr, "• %s\n", msg)
+			s.Suffix = " " + msg
+			if !s.Active() {
+				s.Start()
+			}
+		}
+	}
+	clearStatus := func() {
+		if !quiet && s.Active() {
+			s.Stop()
 		}
 	}
 
@@ -79,6 +96,8 @@ func run(cmd *cobra.Command, args []string) error {
 	configExplicit := cmd.Flags().Changed("config")
 	cfg, rules, walker, err := config.Resolve(flagConfig, configExplicit)
 	if err != nil {
+		clearStatus()
+
 		return err
 	}
 	status(fmt.Sprintf("Loaded %d rules from %s", len(rules), walker.Root()))
@@ -95,6 +114,8 @@ func run(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if len(filtered) == 0 {
+			clearStatus()
+
 			return fmt.Errorf("no matching rules found for: %v", flagRules)
 		}
 		rules = filtered
@@ -102,6 +123,8 @@ func run(cmd *cobra.Command, args []string) error {
 
 	minSeverity, err := lint.ParseSeverity(flagSeverity)
 	if err != nil {
+		clearStatus()
+
 		return err
 	}
 	minRank := lint.SeverityRank(minSeverity)
@@ -113,41 +136,33 @@ func run(cmd *cobra.Command, args []string) error {
 	for _, arg := range args {
 		abs, err := filepath.Abs(arg)
 		if err != nil {
+			clearStatus()
+
 			return fmt.Errorf("resolving path %q: %w", arg, err)
 		}
 		targets = append(targets, abs)
 	}
 
-	var bar *progressbar.ProgressBar
 	var progress engine.ProgressFunc
 	if !quiet {
 		progress = func(file, rule string, done, total int) {
-			if bar == nil {
-				bar = progressbar.NewOptions(total,
-					progressbar.OptionSetWriter(os.Stderr),
-					progressbar.OptionShowCount(),
-				)
-			}
-			bar.Describe(fmt.Sprintf("%s — %s", filepath.Base(file), rule))
-			_ = bar.Set(done)
+			status(fmt.Sprintf("Analyzing (%d/%d) %s — %s", done, total, filepath.Base(file), rule))
 		}
 	}
 
 	eng := engine.NewEngine(client, rules, cfg.Settings, walker, targets, progress, status)
-	findings, filesScanned, err := eng.Run(ctx)
+	findings, filesScanned, warnings, err := eng.Run(ctx)
 	if err != nil {
+		clearStatus()
+
 		return err
 	}
 
-	if bar != nil {
-		_ = bar.Close()
-		_ = bar.Clear()
-		fmt.Fprintln(os.Stderr)
+	for _, w := range warnings {
+		status(fmt.Sprintf("warning: %v", w))
 	}
 
-	if !quiet {
-		fmt.Fprintf(os.Stderr, "Scanned %d files, found %d findings\n", filesScanned, len(findings))
-	}
+	clearStatus()
 
 	var filtered []lint.Finding
 	for _, f := range findings {
@@ -157,21 +172,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	findings = filtered
 
-	summary := lint.Summary{
-		FilesScanned:  filesScanned,
-		RulesApplied:  len(rules),
-		TotalFindings: len(findings),
-	}
-	for _, f := range findings {
-		switch f.Severity {
-		case lint.SeverityError:
-			summary.Errors++
-		case lint.SeverityWarning:
-			summary.Warnings++
-		case lint.SeverityInfo:
-			summary.Info++
-		}
-	}
+	summary := lint.NewSummary(findings, filesScanned, len(rules))
 
 	w, cleanup, err := openOutput(flagOutput)
 	if err != nil {
@@ -190,8 +191,6 @@ func run(cmd *cobra.Command, args []string) error {
 		if err := output.SARIF(w, findings, rules); err != nil {
 			return fmt.Errorf("writing SARIF output: %w", err)
 		}
-	default:
-		return fmt.Errorf("unknown output format %q: must be text, json, or sarif", flagFormat)
 	}
 
 	if !flagQuiet && flagFormat == "text" && flagOutput != "" {
@@ -223,5 +222,9 @@ func openOutput(path string) (io.Writer, func(), error) {
 		return nil, nil, fmt.Errorf("creating output file: %w", err)
 	}
 
-	return f, func() { f.Close() }, nil
+	return f, func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: closing output file: %v\n", err)
+		}
+	}, nil
 }

@@ -13,12 +13,13 @@ import (
 	"github.com/anhle/lentil/internal/llm"
 )
 
+const binaryCheckLimit = 8192
+
 // ProgressFunc is called to report progress on each completed LLM analysis.
 type ProgressFunc func(file string, rule string, done int, total int)
 
 // StatusFunc is called to report status messages during processing.
 type StatusFunc func(msg string)
-
 
 // Engine orchestrates the linting process.
 type Engine struct {
@@ -58,10 +59,11 @@ func NewEngine(client *llm.Client, rules []lint.Rule, settings lint.SettingsConf
 }
 
 // Run executes all rules against matched files and returns findings.
-func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
+// Warnings contains non-fatal errors from individual LLM analyses.
+func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) {
 	workItems, filesSet, err := e.buildWorkItems()
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 
 	if e.onStatus != nil {
@@ -69,7 +71,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 	}
 
 	if len(workItems) == 0 {
-		return nil, len(filesSet), nil
+		return nil, len(filesSet), nil, nil
 	}
 
 	work := make(chan workItem)
@@ -78,6 +80,11 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 
 	for range e.settings.Concurrency {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					results <- result{Err: fmt.Errorf("panic: %v", r)}
+				}
+			}()
 			for item := range work {
 				findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
 				var mapped []lint.Finding
@@ -107,22 +114,16 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 	}()
 
 	var allFindings []lint.Finding
-	var errs []error
+	var warnings []error
 	for done := range total {
 		r := <-results
 		if r.Err != nil {
-			errs = append(errs, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
+			warnings = append(warnings, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
 		} else {
 			allFindings = append(allFindings, r.Findings...)
 		}
 		if e.onProgress != nil {
 			e.onProgress(r.File, r.RuleID, done+1, total)
-		}
-	}
-
-	if len(errs) > 0 {
-		for _, err := range errs {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		}
 	}
 
@@ -139,7 +140,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 		return allFindings[i].Rule < allFindings[j].Rule
 	})
 
-	return allFindings, len(filesSet), nil
+	return allFindings, len(filesSet), warnings, nil
 }
 
 func (e *Engine) buildWorkItems() ([]workItem, map[string]struct{}, error) {
@@ -198,7 +199,7 @@ func dedup(findings []lint.Finding) []lint.Finding {
 	seen := make(map[string]struct{})
 	var result []lint.Finding
 	for _, f := range findings {
-		key := fmt.Sprintf("%s:%d:%s", f.File, f.Line, f.Rule)
+		key := fmt.Sprintf("%s:%d:%s:%s", f.File, f.Line, f.Rule, f.Message)
 		if _, ok := seen[key]; !ok {
 			seen[key] = struct{}{}
 			result = append(result, f)
@@ -224,8 +225,8 @@ func filterByTargets(files []string, targets []string) []string {
 
 func isBinary(content []byte) bool {
 	check := content
-	if len(check) > 8192 {
-		check = check[:8192]
+	if len(check) > binaryCheckLimit {
+		check = check[:binaryCheckLimit]
 	}
 	for _, b := range check {
 		if b == 0 {

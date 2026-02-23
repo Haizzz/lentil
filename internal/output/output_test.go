@@ -119,13 +119,13 @@ func TestSARIF(t *testing.T) {
 
 	out := buf.String()
 
-	// Basic SARIF structure checks
+	var raw map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
+		t.Fatalf("SARIF output is not valid JSON: %v", err)
+	}
+
 	if !strings.Contains(out, "sarifLog") && !strings.Contains(out, "$schema") && !strings.Contains(out, "2.1.0") {
-		// At minimum it should be valid JSON
-		var raw map[string]interface{}
-		if err := json.Unmarshal(buf.Bytes(), &raw); err != nil {
-			t.Errorf("SARIF output is not valid JSON: %v", err)
-		}
+		t.Error("SARIF output missing expected structure markers (sarifLog, $schema, or 2.1.0)")
 	}
 
 	if !strings.Contains(out, "lentil") {

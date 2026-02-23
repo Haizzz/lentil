@@ -12,10 +12,15 @@ import (
 	"github.com/anhle/lentil/internal/lint"
 )
 
-const systemPrompt = `You are a code linter. Analyze the provided source code against the given rule.
+const (
+	maxRetries     = 3
+	requestTimeout = 60 * time.Second
+
+	systemPrompt = `You are a code linter. Analyze the provided source code against the given rule.
 For each violation found, report the line number, column if known, a description of the issue, and the offending code snippet.
 If the code follows the rule, return an empty findings array.
 Respond in JSON.`
+)
 
 var findingsSchema = map[string]any{
 	"type": "object",
@@ -60,14 +65,12 @@ type Client struct {
 }
 
 func NewClient(baseURL, model, apiKey string, temp float64, maxTokens int) *Client {
-	opts := []option.RequestOption{
+	client := openai.NewClient(
 		option.WithBaseURL(baseURL),
-		option.WithMaxRetries(3),
-		option.WithRequestTimeout(60 * time.Second),
-	}
-	opts = append(opts, option.WithAPIKey(apiKey))
-
-	client := openai.NewClient(opts...)
+		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(maxRetries),
+		option.WithRequestTimeout(requestTimeout),
+	)
 
 	return &Client{
 		api:       &client,
@@ -129,5 +132,5 @@ func buildUserPrompt(rule lint.Rule, chunk lint.Chunk) string {
 		header += fmt.Sprintf(" (lines %d-%d of %d)", chunk.StartLine, chunk.EndLine, chunk.TotalLines)
 	}
 
-	return header + "\n" + chunk.Content
+	return header + "\n\n" + chunk.Content
 }

@@ -10,7 +10,7 @@ import (
 
 // Load reads and parses a single lentil config file, applying defaults and validation.
 func Load(path string) (*lint.Config, error) {
-	cfg, err := parseFile(path)
+	cfg, _, err := parseFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("loading config %s: %w", path, err)
 	}
@@ -24,36 +24,49 @@ func Load(path string) (*lint.Config, error) {
 	return cfg, nil
 }
 
-func parseFile(path string) (*lint.Config, error) {
+func parseFile(path string) (*lint.Config, toml.MetaData, error) {
 	var cfg lint.Config
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return nil, err
+	meta, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
+		return nil, toml.MetaData{}, err
 	}
 
-	return &cfg, nil
+	return &cfg, meta, nil
 }
 
 func applyDefaults(cfg *lint.Config) {
 	if cfg.LLM.BaseURL == "" {
-		cfg.LLM.BaseURL = "https://api.openai.com/v1"
+		cfg.LLM.BaseURL = lint.DefaultBaseURL
 	}
 	if cfg.LLM.MaxTokens == 0 {
-		cfg.LLM.MaxTokens = 4096
+		cfg.LLM.MaxTokens = lint.DefaultMaxTokens
 	}
 	if cfg.Settings.Concurrency == 0 {
-		cfg.Settings.Concurrency = 4
+		cfg.Settings.Concurrency = lint.DefaultConcurrency
 	}
 	if cfg.Settings.ChunkLines == 0 {
-		cfg.Settings.ChunkLines = 300
+		cfg.Settings.ChunkLines = lint.DefaultChunkLines
 	}
 	if cfg.Settings.ChunkOverlap == 0 {
-		cfg.Settings.ChunkOverlap = 20
+		cfg.Settings.ChunkOverlap = lint.DefaultChunkOverlap
 	}
 }
 
 func validate(cfg *lint.Config) error {
 	if cfg.LLM.Model == "" {
 		return fmt.Errorf("llm.model is required")
+	}
+	if cfg.LLM.Temperature < 0 || cfg.LLM.Temperature > lint.MaxTemperature {
+		return fmt.Errorf("llm.temperature must be between 0 and %.1f", lint.MaxTemperature)
+	}
+	if cfg.LLM.MaxTokens <= 0 {
+		return fmt.Errorf("llm.max_tokens must be positive")
+	}
+	if cfg.Settings.Concurrency <= 0 {
+		return fmt.Errorf("settings.concurrency must be positive")
+	}
+	if cfg.Settings.ChunkLines <= 0 {
+		return fmt.Errorf("settings.chunk_lines must be positive")
 	}
 	if len(cfg.Rules) == 0 {
 		return fmt.Errorf("at least one rule must be defined")
@@ -90,7 +103,9 @@ func ResolveAPIKey() string {
 
 // BuildRules converts the config's rule map into a slice of Rule structs,
 // defaulting severity to "warning" and glob to "**/*" (all files).
-func BuildRules(cfg *lint.Config, scope string) ([]lint.Rule, error) {
+// If scopeOverrides is non-nil and contains an entry for a rule ID, that
+// scope is used; otherwise defaultScope is used.
+func BuildRules(cfg *lint.Config, defaultScope string, scopeOverrides map[string]string) ([]lint.Rule, error) {
 	var rules []lint.Rule
 	for id, rc := range cfg.Rules {
 		sev := lint.SeverityWarning
@@ -104,6 +119,10 @@ func BuildRules(cfg *lint.Config, scope string) ([]lint.Rule, error) {
 		glob := rc.Glob
 		if glob == "" {
 			glob = "**/*"
+		}
+		scope := defaultScope
+		if s, ok := scopeOverrides[id]; ok {
+			scope = s
 		}
 		rules = append(rules, lint.Rule{
 			ID:       id,

@@ -11,6 +11,16 @@ const (
 	SeverityInfo    Severity = "info"
 )
 
+const (
+	DefaultBaseURL     = "https://api.openai.com/v1"
+	DefaultMaxTokens   = 4096
+	DefaultConcurrency = 8
+	DefaultChunkLines  = 300
+	DefaultChunkOverlap = 20
+
+	MaxTemperature = 2.0
+)
+
 // SeverityRank returns a numeric rank for severity comparison.
 // Higher rank = more severe.
 func SeverityRank(s Severity) int {
@@ -106,4 +116,25 @@ type Summary struct {
 	Errors        int `json:"errors"`
 	Warnings      int `json:"warnings"`
 	Info          int `json:"info"`
+}
+
+// NewSummary builds a Summary by counting severity levels across findings.
+func NewSummary(findings []Finding, filesScanned, rulesApplied int) Summary {
+	s := Summary{
+		FilesScanned:  filesScanned,
+		RulesApplied:  rulesApplied,
+		TotalFindings: len(findings),
+	}
+	for _, f := range findings {
+		switch f.Severity {
+		case SeverityError:
+			s.Errors++
+		case SeverityWarning:
+			s.Warnings++
+		case SeverityInfo:
+			s.Info++
+		}
+	}
+
+	return s
 }

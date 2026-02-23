@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/BurntSushi/toml"
 	"github.com/anhle/lentil/internal/files"
 	"github.com/anhle/lentil/internal/lint"
 )
@@ -15,6 +16,7 @@ const configFileName = "lentil.toml"
 type DiscoveredConfig struct {
 	Dir    string
 	Config *lint.Config
+	Meta   toml.MetaData
 }
 
 // DiscoverConfigs uses the walker to find all lentil.toml files under root,
@@ -27,7 +29,7 @@ func DiscoverConfigs(w *files.Walker) ([]DiscoveredConfig, error) {
 
 	var configs []DiscoveredConfig
 	for _, path := range paths {
-		cfg, err := parseFile(path)
+		cfg, meta, err := parseFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("parsing %s: %w", path, err)
 		}
@@ -35,6 +37,7 @@ func DiscoverConfigs(w *files.Walker) ([]DiscoveredConfig, error) {
 		configs = append(configs, DiscoveredConfig{
 			Dir:    filepath.Dir(path),
 			Config: cfg,
+			Meta:   meta,
 		})
 	}
 
@@ -52,8 +55,8 @@ func MergeConfigs(configs []DiscoveredConfig) (*lint.Config, map[string]string, 
 	ruleScopes := make(map[string]string)
 
 	for _, dc := range configs {
-		mergeLLM(&merged.LLM, &dc.Config.LLM)
-		mergeSettings(&merged.Settings, &dc.Config.Settings)
+		mergeLLM(&merged.LLM, &dc.Config.LLM, dc.Meta)
+		mergeSettings(&merged.Settings, &dc.Config.Settings, dc.Meta)
 
 		for id, rule := range dc.Config.Rules {
 			if prevDir, exists := ruleScopes[id]; exists {
@@ -78,29 +81,29 @@ func MergeConfigs(configs []DiscoveredConfig) (*lint.Config, map[string]string, 
 	return merged, ruleScopes, nil
 }
 
-func mergeLLM(dst, src *lint.LLMConfig) {
-	if src.BaseURL != "" {
+func mergeLLM(dst, src *lint.LLMConfig, meta toml.MetaData) {
+	if meta.IsDefined("llm", "base_url") {
 		dst.BaseURL = src.BaseURL
 	}
-	if src.Model != "" {
+	if meta.IsDefined("llm", "model") {
 		dst.Model = src.Model
 	}
-	if src.Temperature != 0 {
+	if meta.IsDefined("llm", "temperature") {
 		dst.Temperature = src.Temperature
 	}
-	if src.MaxTokens != 0 {
+	if meta.IsDefined("llm", "max_tokens") {
 		dst.MaxTokens = src.MaxTokens
 	}
 }
 
-func mergeSettings(dst, src *lint.SettingsConfig) {
-	if src.Concurrency != 0 {
+func mergeSettings(dst, src *lint.SettingsConfig, meta toml.MetaData) {
+	if meta.IsDefined("settings", "concurrency") {
 		dst.Concurrency = src.Concurrency
 	}
-	if src.ChunkLines != 0 {
+	if meta.IsDefined("settings", "chunk_lines") {
 		dst.ChunkLines = src.ChunkLines
 	}
-	if src.ChunkOverlap != 0 {
+	if meta.IsDefined("settings", "chunk_overlap") {
 		dst.ChunkOverlap = src.ChunkOverlap
 	}
 }
@@ -127,7 +130,7 @@ func Resolve(configPath string, configExplicit bool) (*lint.Config, []lint.Rule,
 			return nil, nil, nil, err
 		}
 
-		rules, err := BuildRules(cfg, absDir)
+		rules, err := BuildRules(cfg, absDir, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -164,28 +167,10 @@ func Resolve(configPath string, configExplicit bool) (*lint.Config, []lint.Rule,
 		return nil, nil, nil, err
 	}
 
-	var allRules []lint.Rule
-	for id, rc := range cfg.Rules {
-		sev := lint.SeverityWarning
-		if rc.Severity != "" {
-			var parseErr error
-			sev, parseErr = lint.ParseSeverity(rc.Severity)
-			if parseErr != nil {
-				return nil, nil, nil, parseErr
-			}
-		}
-		glob := rc.Glob
-		if glob == "" {
-			glob = "**/*"
-		}
-		allRules = append(allRules, lint.Rule{
-			ID:       id,
-			Severity: sev,
-			Prompt:   rc.Prompt,
-			Glob:     glob,
-			Scope:    ruleScopes[id],
-		})
+	rules, err := BuildRules(cfg, "", ruleScopes)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
-	return cfg, allRules, w, nil
+	return cfg, rules, w, nil
 }

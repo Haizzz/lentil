@@ -19,7 +19,6 @@ model = "test-model"
 base_url = "http://localhost:8080/v1"
 
 [settings]
-glob = "**/*.py"
 concurrency = 3
 
 [rules.test-rule]
@@ -73,19 +72,19 @@ prompt = "Find issues"
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.LLM.BaseURL != "https://api.openai.com/v1" {
+	if cfg.LLM.BaseURL != lint.DefaultBaseURL {
 		t.Errorf("default base_url = %q", cfg.LLM.BaseURL)
 	}
-	if cfg.LLM.MaxTokens != 4096 {
+	if cfg.LLM.MaxTokens != lint.DefaultMaxTokens {
 		t.Errorf("default max_tokens = %d", cfg.LLM.MaxTokens)
 	}
-	if cfg.Settings.Concurrency != 4 {
+	if cfg.Settings.Concurrency != lint.DefaultConcurrency {
 		t.Errorf("default concurrency = %d", cfg.Settings.Concurrency)
 	}
-	if cfg.Settings.ChunkLines != 300 {
+	if cfg.Settings.ChunkLines != lint.DefaultChunkLines {
 		t.Errorf("default chunk_lines = %d", cfg.Settings.ChunkLines)
 	}
-	if cfg.Settings.ChunkOverlap != 20 {
+	if cfg.Settings.ChunkOverlap != lint.DefaultChunkOverlap {
 		t.Errorf("default chunk_overlap = %d", cfg.Settings.ChunkOverlap)
 	}
 }
@@ -175,9 +174,6 @@ func TestBuildRules(t *testing.T) {
 [llm]
 model = "m"
 
-[settings]
-glob = "**/*.go"
-
 [rules.rule1]
 severity = "error"
 prompt = "Find errors"
@@ -196,7 +192,7 @@ prompt = "Find warnings"
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	rules, err := BuildRules(cfg, dir)
+	rules, err := BuildRules(cfg, dir, nil)
 	if err != nil {
 		t.Fatalf("BuildRules failed: %v", err)
 	}
@@ -315,32 +311,23 @@ func TestMergeConfigs_AdditiveRules(t *testing.T) {
 	srcDir := filepath.Join(dir, "src")
 
 	configs := []DiscoveredConfig{
-		{
-			Dir: dir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, dir, `
 [llm]
 model = "root-model"
 base_url = "http://root:8080/v1"
 [settings]
-glob = "**/*.go"
 concurrency = 10
 [rules.root-rule]
 severity = "error"
 prompt = "root prompt"
 `),
-		},
-		{
-			Dir: srcDir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, srcDir, `
 [llm]
 model = "src-model"
-[settings]
-glob = "**/*.py"
 [rules.src-rule]
 severity = "warning"
 prompt = "src prompt"
 `),
-		},
 	}
 
 	merged, scopes, err := MergeConfigs(configs)
@@ -382,22 +369,16 @@ func TestMergeConfigs_DuplicateRuleID_Error(t *testing.T) {
 	srcDir := filepath.Join(dir, "src")
 
 	configs := []DiscoveredConfig{
-		{
-			Dir: dir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, dir, `
 [llm]
 model = "m"
 [rules.shared-rule]
 prompt = "from root"
 `),
-		},
-		{
-			Dir: srcDir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, srcDir, `
 [rules.shared-rule]
 prompt = "from src"
 `),
-		},
 	}
 
 	_, _, err := MergeConfigs(configs)
@@ -417,26 +398,20 @@ func TestMergeConfigs_FieldByFieldOverride(t *testing.T) {
 	subDir := filepath.Join(dir, "sub")
 
 	configs := []DiscoveredConfig{
-		{
-			Dir: dir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, dir, `
 [llm]
 model = "base"
 base_url = "http://base/v1"
 temperature = 0.5
 max_tokens = 2048
 [settings]
-glob = "**/*.go"
 concurrency = 4
 chunk_lines = 200
 chunk_overlap = 10
 [rules.r1]
 prompt = "base rule"
 `),
-		},
-		{
-			Dir: subDir,
-			Config: mustParseInline(t, `
+		mustParseInline(t, subDir, `
 [llm]
 temperature = 0.1
 [settings]
@@ -444,7 +419,6 @@ chunk_lines = 500
 [rules.r2]
 prompt = "sub rule"
 `),
-		},
 	}
 
 	merged, _, err := MergeConfigs(configs)
@@ -509,18 +483,18 @@ prompt = "test"
 	}
 }
 
-func mustParseInline(t *testing.T, content string) *lint.Config {
+func mustParseInline(t *testing.T, dir, content string) DiscoveredConfig {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "lentil.toml")
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "lentil.toml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := parseFile(path)
+	cfg, meta, err := parseFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return cfg
+	return DiscoveredConfig{Dir: dir, Config: cfg, Meta: meta}
 }
