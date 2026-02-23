@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anhle/lentil/internal/types"
+	"github.com/anhle/lentil/internal/lint"
 )
 
 // ChunkFile splits a file's lines into chunks with overlap, preserving absolute line numbers.
 // Each chunk's Content is formatted with line number prefixes.
-func ChunkFile(filePath string, lines []string, chunkLines, chunkOverlap int) []types.Chunk {
+func ChunkFile(filePath string, lines []string, chunkLines, chunkOverlap int) []lint.Chunk {
 	totalLines := len(lines)
 	if totalLines == 0 {
 		return nil
@@ -17,7 +17,7 @@ func ChunkFile(filePath string, lines []string, chunkLines, chunkOverlap int) []
 
 	// If the file fits in a single chunk, don't split
 	if totalLines <= chunkLines {
-		return []types.Chunk{{
+		return []lint.Chunk{{
 			FilePath:   filePath,
 			StartLine:  1,
 			EndLine:    totalLines,
@@ -26,7 +26,7 @@ func ChunkFile(filePath string, lines []string, chunkLines, chunkOverlap int) []
 		}}
 	}
 
-	var chunks []types.Chunk
+	var chunks []lint.Chunk
 	step := chunkLines - chunkOverlap
 	if step <= 0 {
 		step = 1
@@ -38,10 +38,10 @@ func ChunkFile(filePath string, lines []string, chunkLines, chunkOverlap int) []
 			end = totalLines
 		}
 
-		chunk := types.Chunk{
+		chunk := lint.Chunk{
 			FilePath:   filePath,
 			StartLine:  start + 1, // 1-based
-			EndLine:    end,        // 1-based inclusive
+			EndLine:    end,       // 1-based inclusive
 			TotalLines: totalLines,
 			Content:    formatLines(lines[start:end], start+1),
 		}

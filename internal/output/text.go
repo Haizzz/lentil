@@ -6,15 +6,15 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/anhle/lentil/internal/types"
+	"github.com/anhle/lentil/internal/lint"
 )
 
 // Text writes findings in a human-readable format with colors.
-func Text(w io.Writer, findings []types.Finding, summary types.Summary) {
-	sevColor := map[types.Severity]*color.Color{
-		types.SeverityError:   color.New(color.FgRed, color.Bold),
-		types.SeverityWarning: color.New(color.FgYellow),
-		types.SeverityInfo:    color.New(color.FgCyan),
+func Text(w io.Writer, findings []lint.Finding, summary lint.Summary) {
+	sevColor := map[lint.Severity]*color.Color{
+		lint.SeverityError:   color.New(color.FgRed, color.Bold),
+		lint.SeverityWarning: color.New(color.FgYellow),
+		lint.SeverityInfo:    color.New(color.FgCyan),
 	}
 
 	for _, f := range findings {

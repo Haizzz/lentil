@@ -4,22 +4,22 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/anhle/lentil/internal/types"
+	"github.com/anhle/lentil/internal/lint"
 )
 
 type jsonOutput struct {
-	Findings []types.Finding `json:"findings"`
-	Summary  types.Summary   `json:"summary"`
+	Findings []lint.Finding `json:"findings"`
+	Summary  lint.Summary   `json:"summary"`
 }
 
 // JSON writes findings as a JSON document.
-func JSON(w io.Writer, findings []types.Finding, summary types.Summary) error {
+func JSON(w io.Writer, findings []lint.Finding, summary lint.Summary) error {
 	out := jsonOutput{
 		Findings: findings,
 		Summary:  summary,
 	}
 	if out.Findings == nil {
-		out.Findings = []types.Finding{}
+		out.Findings = []lint.Finding{}
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

@@ -9,54 +9,72 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bmatcuk/doublestar/v4"
-
+	"github.com/anhle/lentil/internal/files"
+	"github.com/anhle/lentil/internal/lint"
 	"github.com/anhle/lentil/internal/llm"
-	"github.com/anhle/lentil/internal/types"
 )
 
-// ProgressFunc is called to report progress on each completed work item.
+// ProgressFunc is called to report progress on each completed LLM analysis.
 type ProgressFunc func(file string, rule string, done int, total int)
+
+// StatusFunc is called to report status messages during processing.
+type StatusFunc func(msg string)
+
+
+// AIzaSyA-ExampleKey12345
 
 // Engine orchestrates the linting process.
 type Engine struct {
-	client      *llm.Client
-	rules       []types.Rule
-	settings    types.SettingsConfig
-	basePaths   []string
-	onProgress  ProgressFunc
+	client     *llm.Client
+	rules      []lint.Rule
+	settings   lint.SettingsConfig
+	walker     *files.Walker
+	targets    []string
+	onProgress ProgressFunc
+	onStatus   StatusFunc
 }
 
-// NewEngine creates a new Engine.
-func NewEngine(client *llm.Client, rules []types.Rule, settings types.SettingsConfig, basePaths []string, onProgress ProgressFunc) *Engine {
-	if len(basePaths) == 0 {
-		basePaths = []string{"."}
-	}
+type workItem struct {
+	Rule  lint.Rule
+	Chunk lint.Chunk
+}
+
+// NewEngine creates a new Engine. If targets is non-empty, only files under
+// those paths (files or directories) are linted.
+func NewEngine(client *llm.Client, rules []lint.Rule, settings lint.SettingsConfig, walker *files.Walker, targets []string, onProgress ProgressFunc, onStatus StatusFunc) *Engine {
 	return &Engine{
 		client:     client,
 		rules:      rules,
 		settings:   settings,
-		basePaths:  basePaths,
+		walker:     walker,
+		targets:    targets,
 		onProgress: onProgress,
+		onStatus:   onStatus,
 	}
 }
 
 // Run executes all rules against matched files and returns findings.
-func (e *Engine) Run(ctx context.Context) ([]types.Finding, int, error) {
-	// Build work items
+func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, error) {
 	workItems, filesSet, err := e.buildWorkItems()
 	if err != nil {
 		return nil, 0, err
+	}
+
+	if e.onStatus != nil {
+		e.onStatus(fmt.Sprintf("Matched %d files, %d chunks to analyze", len(filesSet), len(workItems)))
 	}
 
 	if len(workItems) == 0 {
 		return nil, len(filesSet), nil
 	}
 
-	// Fan out with bounded concurrency
+	if e.onStatus != nil {
+		e.onStatus("Sending chunks to LLM...")
+	}
+
 	sem := make(chan struct{}, e.settings.Concurrency)
 	var mu sync.Mutex
-	var allFindings []types.Finding
+	var allFindings []lint.Finding
 	var errs []error
 	done := 0
 	total := len(workItems)
@@ -64,7 +82,7 @@ func (e *Engine) Run(ctx context.Context) ([]types.Finding, int, error) {
 	var wg sync.WaitGroup
 	for _, wi := range workItems {
 		wg.Add(1)
-		go func(item types.WorkItem) {
+		go func(item workItem) {
 			defer wg.Done()
 
 			sem <- struct{}{}
@@ -80,7 +98,7 @@ func (e *Engine) Run(ctx context.Context) ([]types.Finding, int, error) {
 				errs = append(errs, fmt.Errorf("rule %s on %s: %w", item.Rule.ID, item.Chunk.FilePath, err))
 			} else {
 				for _, f := range findings {
-					allFindings = append(allFindings, types.Finding{
+					allFindings = append(allFindings, lint.Finding{
 						File:     item.Chunk.FilePath,
 						Line:     f.Line,
 						Column:   f.Column,
@@ -101,16 +119,13 @@ func (e *Engine) Run(ctx context.Context) ([]types.Finding, int, error) {
 	wg.Wait()
 
 	if len(errs) > 0 {
-		// Log errors to stderr but don't fail — partial results are still useful
 		for _, err := range errs {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		}
 	}
 
-	// Deduplicate findings (same file + line + rule = keep first)
 	allFindings = dedup(allFindings)
 
-	// Sort by file then line number
 	sort.Slice(allFindings, func(i, j int) bool {
 		if allFindings[i].File != allFindings[j].File {
 			return allFindings[i].File < allFindings[j].File
@@ -118,43 +133,55 @@ func (e *Engine) Run(ctx context.Context) ([]types.Finding, int, error) {
 		if allFindings[i].Line != allFindings[j].Line {
 			return allFindings[i].Line < allFindings[j].Line
 		}
+
 		return allFindings[i].Rule < allFindings[j].Rule
 	})
 
 	return allFindings, len(filesSet), nil
 }
 
-func (e *Engine) buildWorkItems() ([]types.WorkItem, map[string]struct{}, error) {
-	var workItems []types.WorkItem
+func (e *Engine) buildWorkItems() ([]workItem, map[string]struct{}, error) {
+	var workItems []workItem
 	filesSet := make(map[string]struct{})
+	chunkCache := make(map[string][]lint.Chunk)
 
 	for _, rule := range e.rules {
-		files, err := e.globFiles(rule.Glob)
+		base := rule.Scope
+		if base == "" {
+			base = e.walker.Root()
+		}
+
+		matched, err := e.walker.Glob(base, rule.Glob)
 		if err != nil {
 			return nil, nil, fmt.Errorf("globbing for rule %s: %w", rule.ID, err)
 		}
 
-		for _, file := range files {
+		if len(e.targets) > 0 {
+			matched = filterByTargets(matched, e.targets)
+		}
+
+		for _, file := range matched {
 			filesSet[file] = struct{}{}
 
-			content, err := os.ReadFile(file)
-			if err != nil {
-				return nil, nil, fmt.Errorf("reading %s: %w", file, err)
-			}
+			chunks, ok := chunkCache[file]
+			if !ok {
+				content, err := os.ReadFile(file)
+				if err != nil {
+					return nil, nil, fmt.Errorf("reading %s: %w", file, err)
+				}
 
-			// Skip empty files and likely binary files
-			if len(content) == 0 {
-				continue
-			}
-			if isBinary(content) {
-				continue
-			}
+				if len(content) == 0 || isBinary(content) {
+					chunkCache[file] = nil
+					continue
+				}
 
-			lines := strings.Split(string(content), "\n")
-			chunks := ChunkFile(file, lines, e.settings.ChunkLines, e.settings.ChunkOverlap)
+				lines := strings.Split(string(content), "\n")
+				chunks = ChunkFile(file, lines, e.settings.ChunkLines, e.settings.ChunkOverlap)
+				chunkCache[file] = chunks
+			}
 
 			for _, chunk := range chunks {
-				workItems = append(workItems, types.WorkItem{
+				workItems = append(workItems, workItem{
 					Rule:  rule,
 					Chunk: chunk,
 				})
@@ -165,45 +192,9 @@ func (e *Engine) buildWorkItems() ([]types.WorkItem, map[string]struct{}, error)
 	return workItems, filesSet, nil
 }
 
-func (e *Engine) globFiles(pattern string) ([]string, error) {
-	var allFiles []string
-
-	for _, base := range e.basePaths {
-		fsys := os.DirFS(base)
-		matches, err := doublestar.Glob(fsys, pattern)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range matches {
-			fullPath := filepath.Join(base, m)
-
-			// Check exclude patterns
-			excluded := false
-			for _, excl := range e.settings.Exclude {
-				if ok, _ := doublestar.Match(excl, m); ok {
-					excluded = true
-					break
-				}
-			}
-			if excluded {
-				continue
-			}
-
-			info, err := os.Stat(fullPath)
-			if err != nil || info.IsDir() {
-				continue
-			}
-
-			allFiles = append(allFiles, fullPath)
-		}
-	}
-
-	return allFiles, nil
-}
-
-func dedup(findings []types.Finding) []types.Finding {
+func dedup(findings []lint.Finding) []lint.Finding {
 	seen := make(map[string]struct{})
-	var result []types.Finding
+	var result []lint.Finding
 	for _, f := range findings {
 		key := fmt.Sprintf("%s:%d:%s", f.File, f.Line, f.Rule)
 		if _, ok := seen[key]; !ok {
@@ -211,10 +202,24 @@ func dedup(findings []types.Finding) []types.Finding {
 			result = append(result, f)
 		}
 	}
+
 	return result
 }
 
-// isBinary checks if content looks like a binary file by searching for null bytes in the first 8KB.
+func filterByTargets(files []string, targets []string) []string {
+	var result []string
+	for _, f := range files {
+		for _, t := range targets {
+			if f == t || strings.HasPrefix(f, t+string(filepath.Separator)) {
+				result = append(result, f)
+				break
+			}
+		}
+	}
+
+	return result
+}
+
 func isBinary(content []byte) bool {
 	check := content
 	if len(check) > 8192 {
@@ -225,5 +230,6 @@ func isBinary(content []byte) bool {
 			return true
 		}
 	}
+
 	return false
 }

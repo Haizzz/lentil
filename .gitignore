@@ -1,6 +1,6 @@
 # Binaries
-lentil
-lentil.exe
+/lentil
+/lentil.exe
 *.exe
 *.dll
 *.so

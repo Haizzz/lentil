@@ -48,17 +48,8 @@ export LENTIL_LLM_API_KEY=your-key-here
 2. Create a `lentil.toml` (or use the included one):
 
 ```toml
-include = ["rules/security.toml"]
-
 [llm]
-base_url = "http://localhost:11434/v1"
-model = "qwen2.5-coder:7b"
-temperature = 0.0
-
-[settings]
-glob = "**/*.{py,js,ts,go}"
-exclude = ["vendor/**", "node_modules/**"]
-concurrency = 5
+model = "gpt-5-nano"
 
 [rules.no-hardcoded-secrets]
 severity = "error"
@@ -68,16 +59,16 @@ prompt = "Check if this code contains any hardcoded secrets, API keys, passwords
 3. Run:
 
 ```bash
-lentil
+lentil lint
 ```
 
 ## Usage
 
 ```
-lentil [flags] [paths...]
+lentil lint [flags] [paths...]
 
 Flags:
-  -c, --config string     Config file path (default "lentil.toml")
+  -c, --config string     Config file path (default: discover from git root or cwd)
   -f, --format string     Output format: text|json|sarif (default "text")
   -r, --rule strings      Run only specific rules (comma-separated)
   -s, --severity string   Minimum severity to report: info|warning|error (default "info")
@@ -89,22 +80,22 @@ Flags:
 
 ```bash
 # Lint current directory with default config
-lentil
+lentil lint
 
 # Lint specific paths
-lentil src/ lib/
+lentil lint src/ lib/
 
 # Run only specific rules
-lentil --rule no-hardcoded-secrets,sql-injection
+lentil lint --rule no-hardcoded-secrets,sql-injection
 
 # JSON output for CI
-lentil -f json -q
+lentil lint -f json -q
 
 # SARIF output for GitHub Code Scanning
-lentil -f sarif -o results.sarif
+lentil lint -f sarif -o results.sarif
 
 # Only show errors
-lentil -s error
+lentil lint -s error
 ```
 
 ### Exit Codes
@@ -121,8 +112,8 @@ lentil -s error
 
 ```toml
 [llm]
-base_url = "http://localhost:11434/v1"   # Any OpenAI-compatible endpoint
-model = "qwen2.5-coder:7b"              # Model name
+base_url = "https://api.openai.com/v1"   # Any OpenAI-compatible endpoint (default)
+model = "gpt-5-nano"              # Model name
 temperature = 0.0                        # Low = deterministic
 max_tokens = 4096                        # Max response tokens
 
@@ -141,9 +132,7 @@ max_tokens = 4096                        # Max response tokens
 
 ```toml
 [settings]
-glob = "**/*.{py,js,ts,go,rs}"          # Default file pattern
-exclude = ["vendor/**", "node_modules/**"]
-concurrency = 5                          # Max parallel LLM requests
+concurrency = 4                          # Max parallel LLM requests
 chunk_lines = 300                        # Lines per chunk for large files
 chunk_overlap = 20                       # Overlap between chunks
 ```
@@ -156,7 +145,7 @@ Each rule has an ID (the TOML key), a severity, and a natural language prompt th
 [rules.no-magic-numbers]
 severity = "warning"
 prompt = "Check if this code contains numeric literals used directly in logic (not as named constants). Report each with line number."
-glob = "**/*.{py,js,go}"    # optional, overrides global glob
+glob = "**/*.{py,js,go}"    # optional file pattern (default: all files)
 ```
 
 Severity levels: `error`, `warning`, `info`.
@@ -225,8 +214,8 @@ SARIF v2.1.0 output compatible with GitHub Code Scanning and other SARIF consume
 
 ## How It Works
 
-1. Parses config and resolves included rule files
-2. For each rule, globs matching files (respecting excludes)
+1. Parses config from git root down (hierarchical discovery)
+2. For each rule, globs matching files (respecting .gitignore)
 3. Splits large files into overlapping chunks with absolute line numbers
 4. Sends each chunk + rule prompt to the LLM via OpenAI-compatible API
 5. Parses structured JSON responses into findings

@@ -1,25 +1,11 @@
-# lentil eats its own dogfood — this config lints the lentil codebase itself
-
-# LLM connection settings
 [llm]
-base_url = "http://localhost:11434/v1"   # Any OpenAI-compatible endpoint (this is Ollama's default)
-model = "qwen2.5-coder:7b"
-temperature = 0.0
-max_tokens = 4096
+model = "gpt-5-nano"
 
-# Global settings
-[settings]
-glob = "**/*.go"
-exclude = ["vendor/**", ".git/**"]
-concurrency = 5
-chunk_lines = 300
-chunk_overlap = 20
-
-# Rules
 [rules.no-hardcoded-secrets]
 severity = "error"
-prompt = "Check if this code contains any hardcoded secrets, API keys, passwords, or tokens assigned to variables or passed as string literals. Ignore test fixtures."
+prompt = "Check for hardcoded secrets such as API keys, passwords, tokens, private keys, or connection strings. Flag any string literal that looks like a credential, including base64-encoded values and hex strings that resemble keys. Suggest using environment variables or a secret manager instead."
 
-[rules.error-not-handled]
+[rules.exported-docstrings]
 severity = "warning"
-prompt = "Check if any function call in this code returns an error that the caller ignores or assigns to _ without justification."
+prompt = "Check that every exported function, method, type, and constant has a Go doc comment (a comment starting with the name of the symbol immediately above the declaration). Flag any exported symbol missing its doc comment."
+glob = "**/*.go"

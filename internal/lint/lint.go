@@ -1,4 +1,4 @@
-package types
+package lint
 
 import "fmt"
 
@@ -46,6 +46,7 @@ type Rule struct {
 	Severity Severity
 	Prompt   string
 	Glob     string // file pattern, falls back to global default
+	Scope    string // directory this rule applies to (absolute path)
 }
 
 // Finding represents a single lint finding.
@@ -59,24 +60,10 @@ type Finding struct {
 	Snippet  string   `json:"snippet,omitempty"`
 }
 
-// LLMResponse is the expected JSON response from the LLM.
-type LLMResponse struct {
-	Findings []LLMFinding `json:"findings"`
-}
-
-// LLMFinding is a single finding as returned by the LLM.
-type LLMFinding struct {
-	Line    int    `json:"line"`
-	Column  int    `json:"column"`
-	Message string `json:"message"`
-	Snippet string `json:"snippet"`
-}
-
 // Config is the top-level configuration.
 type Config struct {
-	LLM      LLMConfig            `toml:"llm"`
-	Settings SettingsConfig       `toml:"settings"`
-	Include  []string             `toml:"include"`
+	LLM      LLMConfig             `toml:"llm"`
+	Settings SettingsConfig        `toml:"settings"`
 	Rules    map[string]RuleConfig `toml:"rules"`
 }
 
@@ -90,11 +77,9 @@ type LLMConfig struct {
 
 // SettingsConfig holds global settings.
 type SettingsConfig struct {
-	Glob         string   `toml:"glob"`
-	Exclude      []string `toml:"exclude"`
-	Concurrency  int      `toml:"concurrency"`
-	ChunkLines   int      `toml:"chunk_lines"`
-	ChunkOverlap int      `toml:"chunk_overlap"`
+	Concurrency  int `toml:"concurrency"`
+	ChunkLines   int `toml:"chunk_lines"`
+	ChunkOverlap int `toml:"chunk_overlap"`
 }
 
 // RuleConfig is the TOML representation of a single rule.
@@ -113,18 +98,12 @@ type Chunk struct {
 	Content    string // formatted with line numbers
 }
 
-// WorkItem pairs a rule with a chunk for the engine's work queue.
-type WorkItem struct {
-	Rule  Rule
-	Chunk Chunk
-}
-
 // Summary holds aggregate stats about a lint run.
 type Summary struct {
-	FilesScanned int `json:"files_scanned"`
-	RulesApplied int `json:"rules_applied"`
+	FilesScanned  int `json:"files_scanned"`
+	RulesApplied  int `json:"rules_applied"`
 	TotalFindings int `json:"total_findings"`
-	Errors       int `json:"errors"`
-	Warnings     int `json:"warnings"`
-	Info         int `json:"info"`
+	Errors        int `json:"errors"`
+	Warnings      int `json:"warnings"`
+	Info          int `json:"info"`
 }

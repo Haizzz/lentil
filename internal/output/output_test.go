@@ -6,16 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/anhle/lentil/internal/types"
+	"github.com/anhle/lentil/internal/lint"
 )
 
-var testFindings = []types.Finding{
+var testFindings = []lint.Finding{
 	{
 		File:     "src/auth.py",
 		Line:     42,
 		Column:   1,
 		Rule:     "no-magic-numbers",
-		Severity: types.SeverityWarning,
+		Severity: lint.SeverityWarning,
 		Message:  "Numeric literal used directly",
 	},
 	{
@@ -23,12 +23,12 @@ var testFindings = []types.Finding{
 		Line:     87,
 		Column:   5,
 		Rule:     "no-hardcoded-secrets",
-		Severity: types.SeverityError,
+		Severity: lint.SeverityError,
 		Message:  "Hardcoded API key",
 	},
 }
 
-var testSummary = types.Summary{
+var testSummary = lint.Summary{
 	FilesScanned:  10,
 	RulesApplied:  2,
 	TotalFindings: 2,
@@ -58,7 +58,7 @@ func TestText(t *testing.T) {
 
 func TestText_NoFindings(t *testing.T) {
 	var buf bytes.Buffer
-	s := types.Summary{FilesScanned: 5}
+	s := lint.Summary{FilesScanned: 5}
 	Text(&buf, nil, s)
 	out := buf.String()
 	if !strings.Contains(out, "0 findings") {
@@ -74,8 +74,8 @@ func TestJSON(t *testing.T) {
 	}
 
 	var result struct {
-		Findings []types.Finding `json:"findings"`
-		Summary  types.Summary   `json:"summary"`
+		Findings []lint.Finding `json:"findings"`
+		Summary  lint.Summary   `json:"summary"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
@@ -94,7 +94,7 @@ func TestJSON(t *testing.T) {
 
 func TestJSON_EmptyFindings(t *testing.T) {
 	var buf bytes.Buffer
-	err := JSON(&buf, nil, types.Summary{})
+	err := JSON(&buf, nil, lint.Summary{})
 	if err != nil {
 		t.Fatalf("JSON failed: %v", err)
 	}
@@ -106,9 +106,9 @@ func TestJSON_EmptyFindings(t *testing.T) {
 }
 
 func TestSARIF(t *testing.T) {
-	rules := []types.Rule{
-		{ID: "no-magic-numbers", Severity: types.SeverityWarning, Prompt: "Find magic numbers"},
-		{ID: "no-hardcoded-secrets", Severity: types.SeverityError, Prompt: "Find secrets"},
+	rules := []lint.Rule{
+		{ID: "no-magic-numbers", Severity: lint.SeverityWarning, Prompt: "Find magic numbers"},
+		{ID: "no-hardcoded-secrets", Severity: lint.SeverityError, Prompt: "Find secrets"},
 	}
 
 	var buf bytes.Buffer

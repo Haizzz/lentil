@@ -6,11 +6,11 @@ import (
 	"github.com/owenrumney/go-sarif/v3/pkg/report"
 	"github.com/owenrumney/go-sarif/v3/pkg/report/v210/sarif"
 
-	"github.com/anhle/lentil/internal/types"
+	"github.com/anhle/lentil/internal/lint"
 )
 
 // SARIF writes findings in SARIF v2.1.0 format.
-func SARIF(w io.Writer, findings []types.Finding, rules []types.Rule) error {
+func SARIF(w io.Writer, findings []lint.Finding, rules []lint.Rule) error {
 	r := report.NewV210Report()
 
 	run := sarif.NewRunWithInformationURI("lentil", "https://github.com/anhle/lentil")
@@ -45,13 +45,13 @@ func SARIF(w io.Writer, findings []types.Finding, rules []types.Rule) error {
 	return r.Write(w)
 }
 
-func mapSeverity(s types.Severity) string {
+func mapSeverity(s lint.Severity) string {
 	switch s {
-	case types.SeverityError:
+	case lint.SeverityError:
 		return "error"
-	case types.SeverityWarning:
+	case lint.SeverityWarning:
 		return "warning"
-	case types.SeverityInfo:
+	case lint.SeverityInfo:
 		return "note"
 	default:
 		return "none"
