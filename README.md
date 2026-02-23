@@ -1,32 +1,20 @@
 # lentil
 
-LLM-powered linter that lets you define lint rules as natural language prompts.
+LLM-powered linter that takes lint rules as natural language prompts. It sends code to any OpenAI-compatible endpoint and returns structured findings with file, line number, severity, and message. Ships as a single binary with no runtime dependencies.
 
-Point it at any OpenAI-compatible API endpoint and get structured findings with file, line number, severity, and message. Ships as a single binary with no runtime dependencies.
-
-Works with any provider that exposes an OpenAI-compatible `/v1/chat/completions` endpoint, including:
-
-- **Cloud providers:** OpenAI, Together.ai, Fireworks AI, Groq, Cerebras, SambaNova, DeepInfra, Nebius
-- **Local inference:** Ollama, LM Studio, vLLM, SGLang, llama.cpp
+Works with anything that exposes `/v1/chat/completions`: OpenAI, Ollama, LM Studio, Together.ai, Groq, vLLM, llama.cpp, and others.
 
 ## Why
 
-Traditional linters rely on regex patterns, AST visitors, or tree-sitter queries. These work well for syntactic checks but struggle with anything that requires understanding intent, context, or nuance — things like "is this a magic number or a meaningful constant?", "does this TODO look like it's being tracked?", or "is this string actually a secret?".
+Traditional linters rely on regex, AST visitors, or tree-sitter queries. These handle syntactic checks well, but they struggle with anything that requires understanding context or intent. Questions like "is this a magic number or a meaningful constant?", "is this `_ = err` justified?", or "is that string a test fixture or a leaked secret?" don't have clean pattern-matching answers.
 
-lentil takes a different approach: rules are plain English. Instead of writing and maintaining complex pattern matchers, you describe what you're looking for and an LLM does the analysis. This means:
+lentil takes rules as natural language prompts and uses an LLM to do the analysis. The same rule works across Python, Go, TypeScript, or whatever the model understands, and you can write a new rule in a sentence instead of building a visitor pattern or debugging a tree-sitter grammar.
 
-- **More powerful rules** — catch issues that regex and AST matching simply can't express, like "check if this error is being handled meaningfully" or "flag functions that do too many things"
-- **Easier to set up** — no need to learn a linter plugin API, write visitor patterns, or debug tree-sitter grammars. If you can describe the problem, you can write the rule
-- **More nuanced** — an LLM can distinguish between a hardcoded test fixture and a leaked production secret, or between a justified `_ = err` and a silently swallowed error
-- **Language-agnostic** — the same rule works across Python, Go, TypeScript, Rust, or any language the model understands. No per-language plugin ecosystem to navigate
-
-The tradeoff is speed and cost: lentil is slower than traditional linters and requires an LLM endpoint. It's best used alongside fast linters — let `golangci-lint` or `eslint` handle the quick syntactic checks, and use lentil for the rules that are hard to express any other way.
+It's slower than traditional linters and requires an LLM endpoint, so it works best alongside tools like `golangci-lint` or `eslint` rather than replacing them.
 
 ## Install
 
-Download a prebuilt binary from the [latest release](https://github.com/Haizzz/lentil/releases/latest), extract it, and add it to your `PATH`.
-
-Or install with Go:
+Download a prebuilt binary from the [latest release](https://github.com/Haizzz/lentil/releases/latest), or install with Go:
 
 ```bash
 go install github.com/Haizzz/lentil/cmd/lentil@latest
@@ -40,16 +28,16 @@ cd lentil
 go build -o lentil ./cmd/lentil
 ```
 
-## Quick Start
+## Quick start
 
 1. Set your API key:
 
 ```bash
 export LENTIL_LLM_API_KEY=your-key-here
-# or use OPENAI_API_KEY / ANTHROPIC_API_KEY
+# also checks OPENAI_API_KEY and ANTHROPIC_API_KEY
 ```
 
-2. Create a `lentil.toml` (or use the included one):
+2. Create a `lentil.toml`:
 
 ```toml
 [llm]
@@ -66,6 +54,8 @@ prompt = "Check if this code contains any hardcoded secrets, API keys, passwords
 lentil lint
 ```
 
+Findings print to stdout in the same format as other linters.
+
 ## Usage
 
 ```
@@ -80,100 +70,83 @@ Flags:
   -o, --output string     Write results to file (default: stdout)
 ```
 
-### Examples
-
 ```bash
-# Lint current directory with default config
-lentil lint
-
 # Lint specific paths
 lentil lint src/ lib/
 
-# Run only specific rules
+# Run a subset of rules
 lentil lint --rule no-hardcoded-secrets,sql-injection
 
 # JSON output for CI
 lentil lint -f json -q
 
-# SARIF output for GitHub Code Scanning
+# SARIF for GitHub Code Scanning
 lentil lint -f sarif -o results.sarif
 
-# Only show errors
+# Only errors
 lentil lint -s error
 ```
 
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | No findings at or above severity threshold |
-| 1 | Findings reported |
-| 2 | Tool error (bad config, API unreachable, etc.) |
+Exit codes: `0` clean, `1` findings reported, `2` tool error (bad config, API unreachable, etc.).
 
 ## Configuration
 
-### LLM Settings
+### LLM
 
 ```toml
 [llm]
-base_url = "https://api.openai.com/v1"   # Any OpenAI-compatible endpoint (default)
-model = "gpt-5-nano"              # Model name
-temperature = 0.0                        # Low = deterministic
-max_tokens = 4096                        # Max response tokens
-
-# Example base URLs for popular providers:
-# Ollama:       http://localhost:11434/v1
-# LM Studio:    http://localhost:1234/v1
-# OpenAI:       https://api.openai.com/v1
-# Together.ai:  https://api.together.xyz/v1
-# Fireworks AI: https://api.fireworks.ai/inference/v1
-# Groq:         https://api.groq.com/openai/v1
-# Cerebras:     https://api.cerebras.ai/v1
-# DeepInfra:    https://api.deepinfra.com/v1/openai
+base_url = "https://api.openai.com/v1"   # any OpenAI-compatible endpoint
+model = "gpt-5-nano"
+temperature = 0.0                        # low = deterministic
+max_tokens = 4096
 ```
 
-### Global Settings
+Common base URLs:
+
+- Ollama: `http://localhost:11434/v1`
+- LM Studio: `http://localhost:1234/v1`
+- Together.ai: `https://api.together.xyz/v1`
+- Groq: `https://api.groq.com/openai/v1`
+- Fireworks AI: `https://api.fireworks.ai/inference/v1`
+- Cerebras: `https://api.cerebras.ai/v1`
+- DeepInfra: `https://api.deepinfra.com/v1/openai`
+
+### Settings
 
 ```toml
 [settings]
-concurrency = 4                          # Max parallel LLM requests
-chunk_lines = 300                        # Lines per chunk for large files
-chunk_overlap = 20                       # Overlap between chunks
+concurrency = 4      # max parallel LLM requests
+chunk_lines = 300    # lines per chunk for large files
+chunk_overlap = 20   # overlap between chunks
 ```
 
 ### Rules
 
-Each rule has an ID (the TOML key), a severity, and a natural language prompt that describes what to flag:
+Each rule has an ID (the TOML key), a severity, and a prompt describing what to flag:
 
 ```toml
 [rules.no-magic-numbers]
 severity = "warning"
 prompt = "Check if this code contains numeric literals used directly in logic (not as named constants). Report each with line number."
-glob = "**/*.{py,js,go}"    # optional file pattern (default: all files)
+glob = "**/*.{py,js,go}"    # optional, defaults to all files
 ```
 
 Severity levels: `error`, `warning`, `info`.
 
-### API Key
+### API key
 
-Keys are resolved from environment variables in order:
+lentil resolves API keys from environment variables in this order: `LENTIL_LLM_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. Keys are not stored in config files.
 
-1. `LENTIL_LLM_API_KEY`
-2. `ANTHROPIC_API_KEY`
-3. `OPENAI_API_KEY`
+## Output formats
 
-No API keys are stored in config files.
-
-## Output Formats
-
-### Text (default)
+**Text** (default):
 
 ```
 src/auth.py:42:1: warning[no-magic-numbers] Numeric literal `3` used directly in retry logic
 src/auth.py:87:5: error[no-hardcoded-secrets] Hardcoded API key assigned to variable `api_key`
 ```
 
-### JSON (`-f json`)
+**JSON** (`-f json`):
 
 ```json
 {
@@ -198,62 +171,25 @@ src/auth.py:87:5: error[no-hardcoded-secrets] Hardcoded API key assigned to vari
 }
 ```
 
-### SARIF (`-f sarif`)
+**SARIF** (`-f sarif`): v2.1.0 output compatible with GitHub Code Scanning.
 
-SARIF v2.1.0 output compatible with GitHub Code Scanning and other SARIF consumers.
+## How it works
 
-## How It Works
+lentil discovers config starting from the git root. For each rule, it globs matching files while respecting `.gitignore`, then splits large files into overlapping chunks that preserve absolute line numbers. Each chunk gets sent to the LLM alongside the rule prompt. The LLM returns structured JSON, which lentil validates, deduplicates across chunk boundaries, sorts by file and line, filters by severity, and formats for output.
 
-1. Parses config from git root down (hierarchical discovery)
-2. For each rule, globs matching files (respecting .gitignore)
-3. Splits large files into overlapping chunks with absolute line numbers
-4. Sends each chunk + rule prompt to the LLM via OpenAI-compatible API
-5. Parses structured JSON responses into findings
-6. Deduplicates findings from overlapping chunks
-7. Sorts by file and line, filters by severity, formats output
+Progress goes to stderr, results to stdout, so `lentil -f json` pipes cleanly.
 
 ## Development
 
-### Prerequisites
-
-- Go 1.25+
-- An OpenAI-compatible LLM endpoint for integration testing (e.g. Ollama running locally)
-
-### Build
+Requires Go 1.25+ and an OpenAI-compatible endpoint for integration tests (Ollama locally works fine).
 
 ```bash
 go build -o lentil ./cmd/lentil
-```
-
-### Test
-
-```bash
 go test ./...
 ```
 
-### Key Design Decisions
+Tagged releases are cross-compiled via [GoReleaser](https://goreleaser.com/) (see `.goreleaser.yml`).
 
-- **Concurrency:** The engine builds a work queue of `(rule, chunk)` pairs and fans out with a bounded semaphore (`settings.concurrency`). The bottleneck is LLM API latency, not CPU, so goroutines are the right fit.
-- **Chunking:** Large files are split into overlapping chunks so findings near chunk boundaries aren't missed. Each chunk preserves absolute line numbers so the LLM reports correct positions. Overlapping findings are deduplicated by `(file, line, rule)`.
-- **LLM response parsing:** The LLM is instructed to return strict JSON. Responses are validated — line numbers outside the chunk range are discarded. Malformed JSON is treated as an error for that chunk (other chunks still produce results).
-- **Output:** Progress goes to stderr, results go to stdout. This means `lentil -f json` pipes cleanly. The `--quiet` flag suppresses all stderr output.
+## Licence
 
-### Adding a New Output Format
-
-1. Create `internal/output/yourformat.go` with a function matching the signature: `func YourFormat(w io.Writer, findings []lint.Finding, ...) error`
-2. Wire it into the `switch format` block in `cmd/lentil/main.go`
-3. Add tests in `internal/output/output_test.go`
-
-### Cross-Compilation
-
-Tagged releases are automatically cross-compiled via [GoReleaser](https://goreleaser.com/) (see `.goreleaser.yml`). For manual cross-compilation:
-
-```bash
-GOOS=linux GOARCH=amd64 go build -o lentil-linux ./cmd/lentil
-GOOS=darwin GOARCH=arm64 go build -o lentil-mac ./cmd/lentil
-GOOS=windows GOARCH=amd64 go build -o lentil.exe ./cmd/lentil
-```
-
-## License
-
-MIT — see [LICENSE](LICENSE)
+MIT. See [LICENSE](LICENSE).
