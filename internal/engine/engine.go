@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Haizzz/lentil/internal/files"
 	"github.com/Haizzz/lentil/internal/lint"
@@ -16,7 +17,8 @@ import (
 const binaryCheckLimit = 8192
 
 // ProgressFunc is called to report progress on each completed LLM analysis.
-type ProgressFunc func(file string, rule string, done int, total int)
+// inflight is the number of LLM requests currently in progress.
+type ProgressFunc func(file string, rule string, done int, total int, inflight int)
 
 // StatusFunc is called to report status messages during processing.
 type StatusFunc func(msg string)
@@ -42,6 +44,7 @@ type result struct {
 	Err      error
 	File     string
 	RuleID   string
+	Inflight int
 }
 
 // NewEngine creates a new Engine. If targets is non-empty, only files under
@@ -77,6 +80,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 	work := make(chan workItem)
 	results := make(chan result)
 	total := len(workItems)
+	var inflight atomic.Int32
 
 	for range e.settings.Concurrency {
 		go func() {
@@ -90,7 +94,9 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 					results <- result{Err: ctx.Err(), File: item.Chunk.FilePath, RuleID: item.Rule.ID}
 					continue
 				}
+				inflight.Add(1)
 				findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
+				inflight.Add(-1)
 				var mapped []lint.Finding
 				if err == nil {
 					for _, f := range findings {
@@ -105,7 +111,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 						})
 					}
 				}
-				results <- result{Findings: mapped, Err: err, File: item.Chunk.FilePath, RuleID: item.Rule.ID}
+				results <- result{Findings: mapped, Err: err, File: item.Chunk.FilePath, RuleID: item.Rule.ID, Inflight: int(inflight.Load())}
 			}
 		}()
 	}
@@ -133,7 +139,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 				allFindings = append(allFindings, r.Findings...)
 			}
 			if e.onProgress != nil {
-				e.onProgress(r.File, r.RuleID, done+1, total)
+				e.onProgress(r.File, r.RuleID, done+1, total, r.Inflight)
 			}
 		case <-ctx.Done():
 			return allFindings, len(filesSet), warnings, ctx.Err()

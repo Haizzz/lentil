@@ -170,8 +170,8 @@ func run(cmd *cobra.Command, args []string) error {
 
 	var progress engine.ProgressFunc
 	if !quiet {
-		progress = func(file, rule string, done, total int) {
-			status(fmt.Sprintf("Analyzing (%d/%d) %s — %s", done, total, filepath.Base(file), rule))
+		progress = func(file, rule string, done, total, inflight int) {
+			status(fmt.Sprintf("Analyzing (%d/%d, %d in-flight) %s — %s", done, total, inflight, filepath.Base(file), rule))
 		}
 	}
 
