@@ -81,6 +81,8 @@ func MergeConfigs(configs []DiscoveredConfig) (*lint.Config, map[string]string, 
 	return merged, ruleScopes, nil
 }
 
+// mergeLLM copies explicitly-set LLM fields from src into dst.
+// When adding a new field to lint.LLMConfig, add a corresponding block here.
 func mergeLLM(dst, src *lint.LLMConfig, meta toml.MetaData) {
 	if meta.IsDefined("llm", "base_url") {
 		dst.BaseURL = src.BaseURL
@@ -96,6 +98,8 @@ func mergeLLM(dst, src *lint.LLMConfig, meta toml.MetaData) {
 	}
 }
 
+// mergeSettings copies explicitly-set settings fields from src into dst.
+// When adding a new field to lint.SettingsConfig, add a corresponding block here.
 func mergeSettings(dst, src *lint.SettingsConfig, meta toml.MetaData) {
 	if meta.IsDefined("settings", "concurrency") {
 		dst.Concurrency = src.Concurrency

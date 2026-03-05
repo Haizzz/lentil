@@ -9,14 +9,14 @@ import (
 	"github.com/Haizzz/lentil/internal/lint"
 )
 
+var sevColor = map[lint.Severity]*color.Color{
+	lint.SeverityError:   color.New(color.FgRed, color.Bold),
+	lint.SeverityWarning: color.New(color.FgYellow),
+	lint.SeverityInfo:    color.New(color.FgCyan),
+}
+
 // Text writes findings in a human-readable format with colors.
 func Text(w io.Writer, findings []lint.Finding, summary lint.Summary) {
-	sevColor := map[lint.Severity]*color.Color{
-		lint.SeverityError:   color.New(color.FgRed, color.Bold),
-		lint.SeverityWarning: color.New(color.FgYellow),
-		lint.SeverityInfo:    color.New(color.FgCyan),
-	}
-
 	for _, f := range findings {
 		c := sevColor[f.Severity]
 		if c == nil {

@@ -23,6 +23,12 @@ import (
 	"github.com/Haizzz/lentil/internal/output"
 )
 
+const (
+	spinnerCharSet  = 14
+	spinnerInterval = 80 * time.Millisecond
+	forceExitCode   = 130 // 128 + SIGINT(2), standard Unix convention
+)
+
 var version = buildVersion()
 
 func buildVersion() string {
@@ -87,64 +93,41 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	// On the first interrupt the context is cancelled (graceful shutdown).
+	// If a second interrupt arrives before the process exits, force-quit.
 	go func() {
+		<-ctx.Done() // wait for graceful shutdown to begin
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt)
+		defer signal.Stop(sig)
 		<-sig
 		fmt.Fprintf(os.Stderr, "\nForce exit\n")
-		os.Exit(130)
+		os.Exit(forceExitCode)
 	}()
 
 	quiet := flagQuiet
-	s := spinner.New(spinner.CharSets[14], 80*time.Millisecond, spinner.WithWriter(os.Stderr))
-
-	status := func(msg string) {
-		if !quiet {
-			s.Suffix = " " + msg
-			if !s.Active() {
-				s.Start()
-			}
-		}
-	}
-	clearStatus := func() {
-		if !quiet && s.Active() {
-			s.Stop()
-		}
-	}
+	status, clearStatus := setupSpinner(quiet)
 
 	status("Discovering config...")
 	configExplicit := cmd.Flags().Changed("config")
 	cfg, rules, walker, err := config.Resolve(flagConfig, configExplicit)
 	if err != nil {
 		clearStatus()
-
 		return err
 	}
 	status(fmt.Sprintf("Loaded %d rules from %s", len(rules), walker.Root()))
 
 	if len(flagRules) > 0 {
-		allowed := make(map[string]bool, len(flagRules))
-		for _, r := range flagRules {
-			allowed[r] = true
-		}
-		var filtered []lint.Rule
-		for _, r := range rules {
-			if allowed[r.ID] {
-				filtered = append(filtered, r)
-			}
-		}
-		if len(filtered) == 0 {
+		rules, err = filterRules(rules, flagRules)
+		if err != nil {
 			clearStatus()
-
-			return fmt.Errorf("no matching rules found for: %v", flagRules)
+			return err
 		}
-		rules = filtered
 	}
 
 	minSeverity, err := lint.ParseSeverity(flagSeverity)
 	if err != nil {
 		clearStatus()
-
 		return err
 	}
 	minRank := lint.SeverityRank(minSeverity)
@@ -152,20 +135,14 @@ func run(cmd *cobra.Command, args []string) error {
 	apiKey := config.ResolveAPIKey()
 	if apiKey == "" {
 		clearStatus()
-
 		return fmt.Errorf("no API key found: set LENTIL_LLM_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
 	}
 	client := llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.Model, apiKey, cfg.LLM.Temperature, cfg.LLM.MaxTokens)
 
-	var targets []string
-	for _, arg := range args {
-		abs, err := filepath.Abs(arg)
-		if err != nil {
-			clearStatus()
-
-			return fmt.Errorf("resolving path %q: %w", arg, err)
-		}
-		targets = append(targets, abs)
+	targets, err := resolveTargets(args)
+	if err != nil {
+		clearStatus()
+		return err
 	}
 
 	var progress engine.ProgressFunc
@@ -179,7 +156,6 @@ func run(cmd *cobra.Command, args []string) error {
 	findings, filesScanned, warnings, err := eng.Run(ctx)
 	if err != nil {
 		clearStatus()
-
 		return err
 	}
 
@@ -218,7 +194,7 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if !flagQuiet && flagFormat == "text" && flagOutput != "" {
+	if !quiet && flagFormat == "text" && flagOutput != "" {
 		fmt.Fprintf(os.Stderr, "Results written to %s\n", flagOutput)
 	}
 
@@ -227,6 +203,58 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// setupSpinner creates a spinner and returns status/clearStatus functions.
+// Both functions are no-ops when quiet is true.
+func setupSpinner(quiet bool) (status func(string), clearStatus func()) {
+	s := spinner.New(spinner.CharSets[spinnerCharSet], spinnerInterval, spinner.WithWriter(os.Stderr))
+	status = func(msg string) {
+		if !quiet {
+			s.Suffix = " " + msg
+			if !s.Active() {
+				s.Start()
+			}
+		}
+	}
+	clearStatus = func() {
+		if !quiet && s.Active() {
+			s.Stop()
+		}
+	}
+	return status, clearStatus
+}
+
+// filterRules returns only the rules whose IDs appear in ids.
+// Returns an error if none of the requested IDs match.
+func filterRules(rules []lint.Rule, ids []string) ([]lint.Rule, error) {
+	allowed := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		allowed[id] = true
+	}
+	var filtered []lint.Rule
+	for _, r := range rules {
+		if allowed[r.ID] {
+			filtered = append(filtered, r)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no matching rules found for: %v", ids)
+	}
+	return filtered, nil
+}
+
+// resolveTargets converts CLI path arguments to absolute paths.
+func resolveTargets(args []string) ([]string, error) {
+	targets := make([]string, 0, len(args))
+	for _, arg := range args {
+		abs, err := filepath.Abs(arg)
+		if err != nil {
+			return nil, fmt.Errorf("resolving path %q: %w", arg, err)
+		}
+		targets = append(targets, abs)
+	}
+	return targets, nil
 }
 
 type exitError struct {
