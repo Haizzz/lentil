@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 	"github.com/Haizzz/lentil/internal/lint"
@@ -106,8 +107,15 @@ func ResolveAPIKey() string {
 // If scopeOverrides is non-nil and contains an entry for a rule ID, that
 // scope is used; otherwise defaultScope is used.
 func BuildRules(cfg *lint.Config, defaultScope string, scopeOverrides map[string]string) ([]lint.Rule, error) {
+	ids := make([]string, 0, len(cfg.Rules))
+	for id := range cfg.Rules {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
 	var rules []lint.Rule
-	for id, rc := range cfg.Rules {
+	for _, id := range ids {
+		rc := cfg.Rules[id]
 		sev := lint.SeverityWarning
 		if rc.Severity != "" {
 			var err error

@@ -183,8 +183,6 @@ func (e *Engine) buildWorkItems() ([]workItem, map[string]struct{}, error) {
 		}
 
 		for _, file := range matched {
-			filesSet[file] = struct{}{}
-
 			chunks, ok := chunkCache[file]
 			if !ok {
 				content, err := os.ReadFile(file)
@@ -201,6 +199,12 @@ func (e *Engine) buildWorkItems() ([]workItem, map[string]struct{}, error) {
 				chunks = ChunkFile(file, lines, e.settings.ChunkLines, e.settings.ChunkOverlap)
 				chunkCache[file] = chunks
 			}
+
+			if len(chunks) == 0 {
+				continue // binary or empty file cached from a prior rule
+			}
+
+			filesSet[file] = struct{}{}
 
 			for _, chunk := range chunks {
 				workItems = append(workItems, workItem{
