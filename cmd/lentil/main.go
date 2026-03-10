@@ -161,9 +161,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	clearStatus()
 
-	for _, w := range warnings {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", w)
-	}
+	_ = warnings // errors already printed to stderr and included as findings
 
 	var filtered []lint.Finding
 	for _, f := range findings {
