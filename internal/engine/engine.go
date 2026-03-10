@@ -134,7 +134,16 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 		select {
 		case r := <-results:
 			if r.Err != nil {
+				errMsg := fmt.Sprintf("LLM analysis failed: %v", r.Err)
+				fmt.Fprintf(os.Stderr, "error: rule %s on %s: %s\n", r.RuleID, r.File, errMsg)
 				warnings = append(warnings, fmt.Errorf("rule %s on %s: %w", r.RuleID, r.File, r.Err))
+				allFindings = append(allFindings, lint.Finding{
+					File:     r.File,
+					Line:     0,
+					Rule:     r.RuleID,
+					Severity: lint.SeverityError,
+					Message:  errMsg,
+				})
 			} else {
 				allFindings = append(allFindings, r.Findings...)
 			}

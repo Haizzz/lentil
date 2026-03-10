@@ -153,17 +153,13 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	eng := engine.NewEngine(client, rules, cfg.Settings, walker, targets, progress, status)
-	findings, filesScanned, warnings, err := eng.Run(ctx)
+	findings, filesScanned, _, err := eng.Run(ctx)
 	if err != nil {
 		clearStatus()
 		return err
 	}
 
 	clearStatus()
-
-	for _, w := range warnings {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", w)
-	}
 
 	var filtered []lint.Finding
 	for _, f := range findings {
