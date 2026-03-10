@@ -1,11 +1,92 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Haizzz/lentil/internal/lint"
+	"github.com/Haizzz/lentil/internal/llm"
 )
+
+func TestAnalyzeWithRetry_SuccessFirstAttempt(t *testing.T) {
+	calls := 0
+	fn := func(_ context.Context, _ lint.Rule, _ lint.Chunk) ([]llm.Finding, error) {
+		calls++
+		return []llm.Finding{{Line: 1, Message: "found"}}, nil
+	}
+
+	findings, err := analyzeWithRetry(context.Background(), fn, lint.Rule{}, lint.Chunk{}, 3, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 call, got %d", calls)
+	}
+	if len(findings) != 1 {
+		t.Errorf("expected 1 finding, got %d", len(findings))
+	}
+}
+
+func TestAnalyzeWithRetry_SuccessAfterRetries(t *testing.T) {
+	calls := 0
+	fn := func(_ context.Context, _ lint.Rule, _ lint.Chunk) ([]llm.Finding, error) {
+		calls++
+		if calls < 3 {
+			return nil, errors.New("transient error")
+		}
+		return []llm.Finding{{Line: 1, Message: "found"}}, nil
+	}
+
+	findings, err := analyzeWithRetry(context.Background(), fn, lint.Rule{}, lint.Chunk{}, 3, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls, got %d", calls)
+	}
+	if len(findings) != 1 {
+		t.Errorf("expected 1 finding, got %d", len(findings))
+	}
+}
+
+func TestAnalyzeWithRetry_ExhaustsRetries(t *testing.T) {
+	calls := 0
+	sentinel := errors.New("persistent error")
+	fn := func(_ context.Context, _ lint.Rule, _ lint.Chunk) ([]llm.Finding, error) {
+		calls++
+		return nil, sentinel
+	}
+
+	_, err := analyzeWithRetry(context.Background(), fn, lint.Rule{}, lint.Chunk{}, 3, 0)
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+	if calls != 4 { // 1 initial + 3 retries
+		t.Errorf("expected 4 calls (1 + 3 retries), got %d", calls)
+	}
+}
+
+func TestAnalyzeWithRetry_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	calls := 0
+	fn := func(_ context.Context, _ lint.Rule, _ lint.Chunk) ([]llm.Finding, error) {
+		calls++
+		return nil, errors.New("error")
+	}
+
+	_, err := analyzeWithRetry(ctx, fn, lint.Rule{}, lint.Chunk{}, 3, time.Second)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 call before context cancel, got %d", calls)
+	}
+}
 
 func TestDedup(t *testing.T) {
 	findings := []lint.Finding{

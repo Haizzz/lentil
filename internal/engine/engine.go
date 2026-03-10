@@ -8,13 +8,18 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/Haizzz/lentil/internal/files"
 	"github.com/Haizzz/lentil/internal/lint"
 	"github.com/Haizzz/lentil/internal/llm"
 )
 
-const binaryCheckLimit = 8192
+const (
+	binaryCheckLimit    = 8192
+	analyzeMaxRetries   = 3
+	analyzeRetryBaseWait = time.Second
+)
 
 // ProgressFunc is called to report progress on each completed LLM analysis.
 // inflight is the number of LLM requests currently in progress.
@@ -95,7 +100,7 @@ func (e *Engine) Run(ctx context.Context) ([]lint.Finding, int, []error, error) 
 					continue
 				}
 				inflight.Add(1)
-				findings, err := e.client.Analyze(ctx, item.Rule, item.Chunk)
+				findings, err := analyzeWithRetry(ctx, e.client.Analyze, item.Rule, item.Chunk, analyzeMaxRetries, analyzeRetryBaseWait)
 				inflight.Add(-1)
 				var mapped []lint.Finding
 				if err == nil {
@@ -244,6 +249,34 @@ func filterByTargets(files []string, targets []string) []string {
 	}
 
 	return result
+}
+
+// analyzeFunc is the signature of llm.Client.Analyze, accepted by analyzeWithRetry.
+type analyzeFunc func(ctx context.Context, rule lint.Rule, chunk lint.Chunk) ([]llm.Finding, error)
+
+// analyzeWithRetry calls fn and retries up to maxRetries times on error,
+// waiting baseWait * 2^attempt between attempts. It stops early if ctx is done.
+func analyzeWithRetry(ctx context.Context, fn analyzeFunc, rule lint.Rule, chunk lint.Chunk, maxRetries int, baseWait time.Duration) ([]llm.Finding, error) {
+	var err error
+	for attempt := range maxRetries + 1 {
+		var findings []llm.Finding
+		findings, err = fn(ctx, rule, chunk)
+		if err == nil {
+			return findings, nil
+		}
+		if attempt < maxRetries {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			wait := baseWait * (1 << attempt)
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
+	return nil, err
 }
 
 func isBinary(content []byte) bool {
