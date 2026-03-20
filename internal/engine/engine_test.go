@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/Haizzz/lentil/internal/lint"
@@ -41,51 +40,6 @@ func TestDedup_PreservesOrder(t *testing.T) {
 	if got[0].Severity != "error" {
 		t.Errorf("expected first occurrence (error) to win, got %s", got[0].Severity)
 	}
-}
-
-func TestFilterByTargets(t *testing.T) {
-	sep := string(filepath.Separator)
-	files := []string{
-		"src" + sep + "main.go",
-		"src" + sep + "util.go",
-		"lib" + sep + "helper.go",
-		"README.md",
-	}
-
-	t.Run("prefix match", func(t *testing.T) {
-		got := filterByTargets(files, []string{"src"})
-		if len(got) != 2 {
-			t.Fatalf("expected 2 files under src/, got %d", len(got))
-		}
-	})
-
-	t.Run("exact match", func(t *testing.T) {
-		got := filterByTargets(files, []string{"README.md"})
-		if len(got) != 1 || got[0] != "README.md" {
-			t.Fatalf("expected [README.md], got %v", got)
-		}
-	})
-
-	t.Run("no match", func(t *testing.T) {
-		got := filterByTargets(files, []string{"nonexistent"})
-		if len(got) != 0 {
-			t.Fatalf("expected 0 files, got %d", len(got))
-		}
-	})
-
-	t.Run("empty targets", func(t *testing.T) {
-		got := filterByTargets(files, nil)
-		if len(got) != 0 {
-			t.Fatalf("expected 0 files for empty targets, got %d", len(got))
-		}
-	})
-
-	t.Run("multiple targets", func(t *testing.T) {
-		got := filterByTargets(files, []string{"src", "README.md"})
-		if len(got) != 3 {
-			t.Fatalf("expected 3 files, got %d", len(got))
-		}
-	})
 }
 
 func TestIsBinary(t *testing.T) {

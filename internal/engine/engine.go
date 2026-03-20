@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -176,19 +175,39 @@ func (e *Engine) buildWorkItems() ([]workItem, map[string]struct{}, error) {
 	filesSet := make(map[string]struct{})
 	chunkCache := make(map[string][]lint.Chunk)
 
+	var candidates []string
+	if len(e.targets) > 0 {
+		var err error
+		candidates, err = e.walker.ExpandTargets(e.targets)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
 	for _, rule := range e.rules {
 		base := rule.Scope
 		if base == "" {
 			base = e.walker.Root()
 		}
 
-		matched, err := e.walker.Glob(base, rule.Glob)
-		if err != nil {
-			return nil, nil, fmt.Errorf("globbing for rule %s: %w", rule.ID, err)
-		}
-
+		var matched []string
+		var err error
 		if len(e.targets) > 0 {
-			matched = filterByTargets(matched, e.targets)
+			for _, file := range candidates {
+				ok, err := e.walker.FileMatchesGlob(base, rule.Glob, file)
+				if err != nil {
+					return nil, nil, fmt.Errorf("matching glob for rule %s: %w", rule.ID, err)
+				}
+				if ok {
+					matched = append(matched, file)
+				}
+			}
+			sort.Strings(matched)
+		} else {
+			matched, err = e.walker.Glob(base, rule.Glob)
+			if err != nil {
+				return nil, nil, fmt.Errorf("globbing for rule %s: %w", rule.ID, err)
+			}
 		}
 
 		for _, file := range matched {
@@ -235,20 +254,6 @@ func dedup(findings []lint.Finding) []lint.Finding {
 		if _, ok := seen[key]; !ok {
 			seen[key] = struct{}{}
 			result = append(result, f)
-		}
-	}
-
-	return result
-}
-
-func filterByTargets(files []string, targets []string) []string {
-	var result []string
-	for _, f := range files {
-		for _, t := range targets {
-			if f == t || strings.HasPrefix(f, t+string(filepath.Separator)) {
-				result = append(result, f)
-				break
-			}
 		}
 	}
 

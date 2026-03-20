@@ -181,6 +181,31 @@ func TestWalker_Glob_SkipsDotGit(t *testing.T) {
 	}
 }
 
+func TestWalker_NewWalkerWithoutGitignore_IncludesIgnoredFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".gitignore"), "*.log\n")
+	logPath := filepath.Join(dir, "keep.log")
+	writeFile(t, logPath, "x")
+
+	w, err := NewWalkerWithoutGitignore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !w.IsLintablePath(logPath) {
+		t.Error("without gitignore scan, an ignored extension should still be lintable when under root")
+	}
+
+	wFull, err := NewWalker(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if wFull.IsLintablePath(logPath) {
+		t.Error("with gitignore loaded, .log should stay excluded")
+	}
+}
+
 func TestFindRoot_NonGitDir(t *testing.T) {
 	dir := t.TempDir()
 
@@ -191,5 +216,68 @@ func TestFindRoot_NonGitDir(t *testing.T) {
 
 	if root != dir {
 		t.Errorf("expected cwd fallback %q, got %q", dir, root)
+	}
+}
+
+func TestWalker_IsLintablePath(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "keep.go"), "x")
+	writeFile(t, filepath.Join(dir, ".gitignore"), "*.log\n")
+	writeFile(t, filepath.Join(dir, "skip.log"), "x")
+
+	w, err := NewWalker(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !w.IsLintablePath(filepath.Join(dir, "keep.go")) {
+		t.Error("keep.go should be lintable")
+	}
+
+	if w.IsLintablePath(filepath.Join(dir, "skip.log")) {
+		t.Error("skip.log should not be lintable (gitignore)")
+	}
+}
+
+func TestWalker_ExpandTargets(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.go"), "x")
+	writeFile(t, filepath.Join(dir, "sub", "b.go"), "x")
+	writeFile(t, filepath.Join(dir, "c.py"), "x")
+
+	w, err := NewWalker(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := w.ExpandTargets([]string{filepath.Join(dir, "a.go"), filepath.Join(dir, "sub")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 files, got %d: %v", len(got), got)
+	}
+}
+
+func TestWalker_FileMatchesGlob(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "src", "main.go"), "x")
+
+	w, err := NewWalker(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := filepath.Join(dir, "src", "main.go")
+
+	ok, err := w.FileMatchesGlob(dir, "**/*.go", f)
+	if err != nil || !ok {
+		t.Fatalf("expected **/*.go to match, ok=%v err=%v", ok, err)
+	}
+
+	ok, err = w.FileMatchesGlob(dir, "**/*.py", f)
+	if err != nil || ok {
+		t.Fatalf("expected **/*.py not to match, ok=%v err=%v", ok, err)
 	}
 }

@@ -464,7 +464,7 @@ prompt = "test"
 		t.Fatal(err)
 	}
 
-	cfg, rules, walker, err := Resolve(cfgPath, true)
+	cfg, rules, walker, err := Resolve(cfgPath, true, false, nil)
 	if err != nil {
 		t.Fatalf("Resolve failed: %v", err)
 	}
@@ -480,6 +480,54 @@ prompt = "test"
 	}
 	if walker == nil {
 		t.Error("expected non-nil walker")
+	}
+
+	wantRoot, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if walker.Root() != wantRoot {
+		t.Errorf("walker.Root() = %q, want %q (config directory)", walker.Root(), wantRoot)
+	}
+}
+
+func TestResolve_ExplicitWithCLIPaths_UsesCwdAsWalkerRoot(t *testing.T) {
+	configDir := t.TempDir()
+	projectDir := t.TempDir()
+	cfgPath := filepath.Join(configDir, "lentil.toml")
+	content := `
+[llm]
+model = "m"
+[rules.r1]
+prompt = "p"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	wantRoot, err := filepath.Abs(projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(projectDir)
+
+	_, rules, walker, err := Resolve(cfgPath, true, true, nil)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if walker.Root() != wantRoot {
+		t.Errorf("walker.Root() = %q, want cwd/project %q", walker.Root(), wantRoot)
+	}
+
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(rules))
+	}
+
+	if rules[0].Scope != wantRoot {
+		t.Errorf("rule.Scope = %q, want %q", rules[0].Scope, wantRoot)
 	}
 }
 

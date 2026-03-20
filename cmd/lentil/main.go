@@ -64,7 +64,7 @@ func main() {
 		RunE:  run,
 	}
 
-	lintCmd.Flags().StringVarP(&flagConfig, "config", "c", "", "Config file path (default: discover from git root or cwd)")
+	rootCmd.PersistentFlags().StringVarP(&flagConfig, "config", "c", "", "Config file path (default: discover from git root or cwd)")
 	lintCmd.Flags().StringVarP(&flagFormat, "format", "f", "text", "Output format: text|json|sarif")
 	lintCmd.Flags().StringSliceVarP(&flagRules, "rule", "r", nil, "Run only specific rules (comma-separated)")
 	lintCmd.Flags().StringVarP(&flagSeverity, "severity", "s", "info", "Minimum severity to report: info|warning|error")
@@ -108,9 +108,8 @@ func run(cmd *cobra.Command, args []string) error {
 	quiet := flagQuiet
 	status, clearStatus := setupSpinner(quiet)
 
-	status("Discovering config...")
-	configExplicit := cmd.Flags().Changed("config")
-	cfg, rules, walker, err := config.Resolve(flagConfig, configExplicit)
+	configExplicit := cmd.Flag("config").Changed
+	cfg, rules, walker, err := config.Resolve(flagConfig, configExplicit, len(args) > 0, status)
 	if err != nil {
 		clearStatus()
 		return err

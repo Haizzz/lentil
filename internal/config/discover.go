@@ -116,25 +116,70 @@ func mergeSettings(dst, src *lint.SettingsConfig, meta toml.MetaData) {
 // If configExplicit is true, it loads the single file at configPath.
 // Otherwise, it discovers all lentil.toml files from the project root
 // down and merges them hierarchically.
+// When configExplicit is true and hasCLITargets is true, the walker root and
+// rule scopes use files.FindRoot(cwd) so paths on the CLI can live outside the
+// config file's directory. When hasCLITargets is false, the walker is rooted at
+// the config file's directory (unchanged behavior).
+// onStatus, if non-nil, is called for spinner updates (e.g. separating config load
+// from workspace setup). When hasCLITargets is true, [files.NewWalkerWithoutGitignore]
+// is used so there is no recursive .gitignore scan.
 // Returns the merged config, built rules, and the walker for the engine.
-func Resolve(configPath string, configExplicit bool) (*lint.Config, []lint.Rule, *files.Walker, error) {
+func Resolve(configPath string, configExplicit bool, hasCLITargets bool, onStatus func(string)) (*lint.Config, []lint.Rule, *files.Walker, error) {
+	emit := func(msg string) {
+		if onStatus != nil {
+			onStatus(msg)
+		}
+	}
+
 	if configExplicit {
+		emit("Loading config...")
 		cfg, err := Load(configPath)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		absDir, err := filepath.Abs(filepath.Dir(configPath))
+		absConfigDir, err := filepath.Abs(filepath.Dir(configPath))
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		w, err := files.NewWalker(absDir)
+		walkRoot := absConfigDir
+		scopeRoot := absConfigDir
+		if hasCLITargets {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("getting working directory: %w", err)
+			}
+			root, err := files.FindRoot(cwd)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("finding project root: %w", err)
+			}
+			walkRoot = root
+			scopeRoot = root
+		}
+
+		if hasCLITargets {
+			emit("Preparing workspace...")
+			w, err := files.NewWalkerWithoutGitignore(walkRoot)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+
+			rules, err := BuildRules(cfg, scopeRoot, nil)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+
+			return cfg, rules, w, nil
+		}
+
+		emit("Scanning .gitignore files...")
+		w, err := files.NewWalker(walkRoot)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		rules, err := BuildRules(cfg, absDir, nil)
+		rules, err := BuildRules(cfg, scopeRoot, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -142,6 +187,7 @@ func Resolve(configPath string, configExplicit bool) (*lint.Config, []lint.Rule,
 		return cfg, rules, w, nil
 	}
 
+	emit("Resolving project root...")
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("getting working directory: %w", err)
@@ -152,11 +198,19 @@ func Resolve(configPath string, configExplicit bool) (*lint.Config, []lint.Rule,
 		return nil, nil, nil, fmt.Errorf("finding project root: %w", err)
 	}
 
-	w, err := files.NewWalker(root)
+	var w *files.Walker
+	if hasCLITargets {
+		emit("Preparing workspace...")
+		w, err = files.NewWalkerWithoutGitignore(root)
+	} else {
+		emit("Scanning .gitignore files...")
+		w, err = files.NewWalker(root)
+	}
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating file walker: %w", err)
 	}
 
+	emit("Discovering lentil.toml files...")
 	discovered, err := DiscoverConfigs(w)
 	if err != nil {
 		return nil, nil, nil, err
